@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（高精度音声入力）</title>
+  <title>バッテリーセル記録（まとめ入力モード対応）</title>
   <style>
     body { font-family: sans-serif; padding: 15px; max-width: 800px; margin: 0 auto; }
     .controls { 
@@ -22,6 +22,20 @@
     #start-btn { background-color: #4CAF50; color: white; border: none; }
     #start-btn.listening { background-color: #f44336; }
     #export-btn { background-color: #2196F3; color: white; border: none; }
+    
+    .mode-selector {
+      width: 100%;
+      background: #eef6ff;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #b6d4fe;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      font-weight: bold;
+    }
+    .mode-selector label { cursor: pointer; }
+
     #status { font-weight: bold; color: #555; }
     .recognized-text { width: 100%; font-size: 0.95rem; background: #f9f9f9; padding: 8px; border: 1px solid #ddd; border-radius: 4px; color: #333; }
     .hint { width: 100%; color: #666; font-size: 0.85rem; }
@@ -40,9 +54,19 @@
     <button id="start-btn">🎤 音声入力 開始</button>
     <button id="export-btn">📊 Excel用CSV出力</button>
     <span id="status">停止中</span>
+
+    <!-- 入力対象を選択するラジオボタン -->
+    <div class="mode-selector">
+      <span>現在の入力対象:</span>
+      <label><input type="radio" name="input-target" value="sg" checked> 🧪 比重モード</label>
+      <label><input type="radio" name="input-target" value="v"> ⚡ 電圧モード</label>
+      <label><input type="radio" name="input-target" value="both"> 🔄 両方モード</label>
+    </div>
     
     <div class="recognized-text">認識結果: <span id="last-speech" style="font-weight:bold; color:#1a0dab;">-</span></div>
-    <div class="hint">💡 コツ：「セル 3 比重 1 点 2 8 電圧 2 点 1 5」とはっきり発声してください</div>
+    <div class="hint" id="mode-hint">
+      💡 <b>比重モードの言い方例：</b>「1番 1 点 2 8」「2番 1 点 2 5」（「比重」と言う必要はありません）
+    </div>
   </div>
 
   <table>
@@ -71,6 +95,22 @@
       `;
       tbody.appendChild(tr);
     }
+
+    // モード切替時のヒント表示変更
+    const radios = document.querySelectorAll('input[name="input-target"]');
+    const modeHint = document.getElementById('mode-hint');
+    radios.forEach(r => {
+      r.addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (val === 'sg') {
+          modeHint.innerHTML = '💡 <b>比重モードの言い方例：</b>「1番 1 点 2 8」「2番 1 点 2 5」';
+        } else if (val === 'v') {
+          modeHint.innerHTML = '💡 <b>電圧モードの言い方例：</b>「1番 2 点 1 5」「2番 2 点 1 8」';
+        } else {
+          modeHint.innerHTML = '💡 <b>両方モードの言い方例：</b>「1番 比重 1 点 2 8 電圧 2 点 1 5」';
+        }
+      });
+    });
 
     // 日本語の数値・漢数字表記を全角半角数値に統一する変換関数
     function normalizeJapaneseNumbers(text) {
@@ -149,9 +189,11 @@
         const normalized = normalizeJapaneseNumbers(rawText);
         console.log("変換後:", normalized);
 
-        const cellMatch = normalized.match(/(?:セル|セルナンバー|ナンバー|No|no|番)?\s*(\d{1,2})/);
-        const sgMatch = normalized.match(/(?:比重|ひじゅう)\s*(\d(?:\.\d+)?)/);
-        const vMatch = normalized.match(/(?:電圧|でんあつ)\s*(\d(?:\.\d+)?)/);
+        // 1. セル番号の抽出（「1番」「セル2」など）
+        const cellMatch = normalized.match(/(?:セル|セルナンバー|ナンバー|No|no)?\s*(\d{1,2})\s*(?:番|セル)?/);
+        
+        // 2. 数値の抽出（小数点のついた数値、あるいは数値全般）
+        const numberMatches = normalized.match(/\d(?:\.\d+)?/g);
 
         if (cellMatch) {
           const cellNum = parseInt(cellMatch[1], 10);
@@ -164,11 +206,34 @@
               targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
 
-            if (sgMatch) {
-              document.getElementById(`sg-${cellNum}`).value = sgMatch[1];
+            // 現在選択されているモードを取得
+            const currentMode = document.querySelector('input[name="input-target"]:checked').value;
+
+            // セル番号以外の数値を取り出す
+            let val = null;
+            if (numberMatches) {
+              // セル番号と一致しない最初の数値を値として採用
+              for (let numStr of numberMatches) {
+                if (parseFloat(numStr) !== cellNum || numberMatches.length === 1) {
+                  val = numStr;
+                }
+              }
+              if (!val && numberMatches.length > 1) {
+                val = numberMatches[1];
+              }
             }
-            if (vMatch) {
-              document.getElementById(`v-${cellNum}`).value = vMatch[1];
+
+            // モードに応じた自動割り当て
+            if (currentMode === 'sg' && val) {
+              document.getElementById(`sg-${cellNum}`).value = val;
+            } else if (currentMode === 'v' && val) {
+              document.getElementById(`v-${cellNum}`).value = val;
+            } else if (currentMode === 'both') {
+              // 両方モード：明示的な判定
+              const sgMatch = normalized.match(/(?:比重|ひじゅう)\s*(\d(?:\.\d+)?)/);
+              const vMatch = normalized.match(/(?:電圧|でんあつ)\s*(\d(?:\.\d+)?)/);
+              if (sgMatch) document.getElementById(`sg-${cellNum}`).value = sgMatch[1];
+              if (vMatch) document.getElementById(`v-${cellNum}`).value = vMatch[1];
             }
           }
         }
