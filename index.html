@@ -146,7 +146,7 @@
     </div>
     <div class="info-group">
       <label for="model-type">型式:</label>
-      <input type="text" id="model-type" placeholder="例: 8FB15">
+      <input type="text" id="model-type" placeholder="例: EB100">
     </div>
     <div class="info-group">
       <label for="battery-type">バッテリー型式:</label>
@@ -206,13 +206,13 @@
                 <td style="font-weight:bold; background:#f9f9f9;">${i}</td>
                 <td>
                   <div style="display:flex; align-items:center; justify-content:center;">
-                    <input type="number" step="0.001" id="sg-${i}" placeholder="1.280" oninput="updateMinMaxHighlights()">
+                    <input type="number" step="0.001" id="sg-${i}" oninput="updateMinMaxHighlights()">
                     <span id="badge-sg-${i}"></span>
                   </div>
                 </td>
                 <td>
                   <div style="display:flex; align-items:center; justify-content:center;">
-                    <input type="number" step="0.01" id="v-${i}" placeholder="2.15" oninput="updateMinMaxHighlights()">
+                    <input type="number" step="0.01" id="v-${i}" oninput="updateMinMaxHighlights()">
                     <span id="badge-v-${i}"></span>
                   </div>
                 </td>
