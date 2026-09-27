@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（2段・12列レイアウト）</title>
+  <title>バッテリーセル記録（Excel罫線・カラー装飾出力対応版）</title>
+  <!-- Excelファイル（.xlsx）生成・装飾用ライブラリ -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <style>
     body { font-family: sans-serif; padding: 15px; max-width: 1200px; margin: 0 auto; background-color: #f8f9fa; }
     h1 { text-align: center; font-size: 1.5rem; margin-bottom: 15px; }
@@ -26,7 +28,7 @@
     #start-btn { background-color: #4CAF50; color: white; border: none; }
     #start-btn.listening { background-color: #f44336; }
     #undo-btn { background-color: #ff9800; color: white; border: none; }
-    #export-btn { background-color: #2196F3; color: white; border: none; }
+    #export-btn { background-color: #1D6F42; color: white; border: none; }
     
     .total-v-container {
       width: 100%;
@@ -86,7 +88,7 @@
       font-size: 0.85rem;
     }
     .grid-table th { background: #f0f0f0; }
-    .row-header { background: #e9ecef; font-weight: bold; width: 70px; }
+    .row-header { background: #e9ecef; font-weight: bold; width: 80px; }
     .cell-header { background: #17a2b8; color: white; font-weight: bold; }
     
     .cell-box {
@@ -122,12 +124,12 @@
 </head>
 <body>
 
-  <h1>バッテリーセル測定記録（1-12 / 13-24）</h1>
+  <h1>バッテリーセル測定記録（Excel出力対応）</h1>
 
   <div class="controls">
     <button id="start-btn">🎤 音声入力 開始</button>
     <button id="undo-btn">↩️ 1つ戻す</button>
-    <button id="export-btn">📊 Excel用CSV出力</button>
+    <button id="export-btn">📊 Excelファイル（.xlsx）出力</button>
     <span id="status">停止中</span>
 
     <div class="total-v-container">
@@ -156,7 +158,6 @@
       <thead>
         <tr>
           <th class="row-header">セル No.</th>
-          <!-- 1〜12ヘッダー -->
           <script>
             for(let i=1; i<=12; i++) document.write(`<th class="cell-header">${i}</th>`);
           </script>
@@ -165,7 +166,6 @@
       <tbody>
         <tr>
           <td class="row-header">比重 (S.G.)</td>
-          <!-- 1〜12比重 -->
           <script>
             for(let i=1; i<=12; i++) {
               document.write(`
@@ -181,7 +181,6 @@
         </tr>
         <tr>
           <td class="row-header">電圧 (V)</td>
-          <!-- 1〜12電圧 -->
           <script>
             for(let i=1; i<=12; i++) {
               document.write(`
@@ -205,7 +204,6 @@
       <thead>
         <tr>
           <th class="row-header">セル No.</th>
-          <!-- 13〜24ヘッダー -->
           <script>
             for(let i=13; i<=24; i++) document.write(`<th class="cell-header" style="background:#0984e3;">${i}</th>`);
           </script>
@@ -214,7 +212,6 @@
       <tbody>
         <tr>
           <td class="row-header">比重 (S.G.)</td>
-          <!-- 13〜24比重 -->
           <script>
             for(let i=13; i<=24; i++) {
               document.write(`
@@ -230,7 +227,6 @@
         </tr>
         <tr>
           <td class="row-header">電圧 (V)</td>
-          <!-- 13〜24電圧 -->
           <script>
             for(let i=13; i<=24; i++) {
               document.write(`
@@ -642,8 +638,13 @@
       alert("お使いのブラウザは音声認識機能に対応していません。Google Chromeをお試しください。");
     }
 
-    // CSV出力
+    // ★【新機能】装飾（罫線・背景色・フォント色）付きExcelファイル（.xlsx）の出力処理
     document.getElementById('export-btn').addEventListener('click', () => {
+      if (typeof XLSX === 'undefined') {
+        alert("Excelライブラリの読み込みに失敗しました。インターネット接続を確認してください。");
+        return;
+      }
+
       const stats = calculateMinMax();
       const totalV = document.getElementById('total-voltage').value || "-";
 
@@ -652,52 +653,143 @@
       const vMinStr  = stats.v.min  !== null ? `${stats.v.min} (${stats.v.minCells.map(c=>c+'番').join('&')})`  : "-";
       const vMaxStr  = stats.v.max  !== null ? `${stats.v.max} (${stats.v.maxCells.map(c=>c+'番').join('&')})`  : "-";
 
-      let csvContent = `■ 全体情報,,,\n`;
-      csvContent += `全体電圧 (V),${totalV},,\n`;
-      csvContent += `比重 最低値 (S.G.),${sgMinStr},,\n`;
-      csvContent += `比重 最高値 (S.G.),${sgMaxStr},,\n`;
-      csvContent += `電圧 最低値 (V),${vMinStr},,\n`;
-      csvContent += `電圧 最高値 (V),${vMaxStr},,\n\n`;
+      // スタイル定義（共通罫線・色指定）
+      const thinBorder = {
+        top: { style: "thin", color: { rgb: "CCCCCC" } },
+        bottom: { style: "thin", color: { rgb: "CCCCCC" } },
+        left: { style: "thin", color: { rgb: "CCCCCC" } },
+        right: { style: "thin", color: { rgb: "CCCCCC" } }
+      };
 
-      csvContent += "セル No.,比重 (S.G.),電圧 (V),備考・マーク\n";
+      const styleTitle = {
+        font: { bold: true, size: 12, color: { rgb: "111111" } },
+        fill: { fgColor: { rgb: "E9ECEF" } },
+        border: thinBorder,
+        alignment: { horizontal: "left", vertical: "center" }
+      };
 
-      for (let i = 1; i <= 24; i++) {
-        const sgValStr = document.getElementById(`sg-${i}`).value || "";
-        const vValStr = document.getElementById(`v-${i}`).value || "";
-        const sgVal = parseFloat(sgValStr);
-        const vVal = parseFloat(vValStr);
+      const styleHeader = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "17A2B8" } },
+        border: thinBorder,
+        alignment: { horizontal: "center", vertical: "center" }
+      };
 
-        let marks = [];
-        if (!isNaN(sgVal)) {
-          if (stats.sg.max !== null && sgVal === stats.sg.max) marks.push("比重[最高]");
-          if (stats.sg.min !== null && sgVal === stats.sg.min) marks.push("比重[最低]");
+      const styleHeader2 = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "0984E3" } },
+        border: thinBorder,
+        alignment: { horizontal: "center", vertical: "center" }
+      };
+
+      const styleRowLabel = {
+        font: { bold: true, color: { rgb: "333333" } },
+        fill: { fgColor: { rgb: "F0F0F0" } },
+        border: thinBorder,
+        alignment: { horizontal: "center", vertical: "center" }
+      };
+
+      const styleNormal = {
+        font: { color: { rgb: "000000" } },
+        border: thinBorder,
+        alignment: { horizontal: "right", vertical: "center" }
+      };
+
+      const styleMax = {
+        font: { bold: true, color: { rgb: "D32F2F" } }, // 赤太字
+        fill: { fgColor: { rgb: "FFEBEE" } },           // 薄赤背景
+        border: thinBorder,
+        alignment: { horizontal: "right", vertical: "center" }
+      };
+
+      const styleMin = {
+        font: { bold: true, color: { rgb: "1976D2" } }, // 青太字
+        fill: { fgColor: { rgb: "E3F2FD" } },           // 薄青背景
+        border: thinBorder,
+        alignment: { horizontal: "right", vertical: "center" }
+      };
+
+      // ワークシートデータ構築
+      const wsData = [];
+
+      // ■ 全体情報
+      wsData.push([{ v: "■ 全体情報", s: styleTitle }, { v: "", s: styleTitle }]);
+      wsData.push([{ v: "全体電圧 (V)", s: styleRowLabel }, { v: totalV, s: styleNormal }]);
+      wsData.push([{ v: "比重 最低値 (S.G.)", s: styleRowLabel }, { v: sgMinStr, s: styleMin }]);
+      wsData.push([{ v: "比重 最高値 (S.G.)", s: styleRowLabel }, { v: sgMaxStr, s: styleMax }]);
+      wsData.push([{ v: "電圧 最低値 (V)", s: styleRowLabel }, { v: vMinStr, s: styleMin }]);
+      wsData.push([{ v: "電圧 最高値 (V)", s: styleRowLabel }, { v: vMaxStr, s: styleMax }]);
+      wsData.push([]); // 空行
+
+      // ブロック作成関数
+      const appendBlock = (title, startCell, endCell, headerStyle) => {
+        // タイトル行
+        let titleRow = [{ v: `■ ${title}`, s: styleTitle }];
+        for (let i = startCell; i <= endCell; i++) titleRow.push({ v: "", s: styleTitle });
+        wsData.push(titleRow);
+
+        // セル No.
+        let headerRow = [{ v: "セル No.", s: styleRowLabel }];
+        for (let i = startCell; i <= endCell; i++) {
+          headerRow.push({ v: i, s: headerStyle });
         }
-        if (!isNaN(vVal)) {
-          if (stats.v.max !== null && vVal === stats.v.max) marks.push("電圧[最高]");
-          if (stats.v.min !== null && vVal === stats.v.min) marks.push("電圧[最低]");
+        wsData.push(headerRow);
+
+        // 比重
+        let sgRow = [{ v: "比重 (S.G.)", s: styleRowLabel }];
+        for (let i = startCell; i <= endCell; i++) {
+          const rawVal = document.getElementById(`sg-${i}`).value;
+          const val = parseFloat(rawVal);
+          let cellStyle = styleNormal;
+          if (!isNaN(val)) {
+            if (stats.sg.max !== null && val === stats.sg.max) cellStyle = styleMax;
+            else if (stats.sg.min !== null && val === stats.sg.min) cellStyle = styleMin;
+          }
+          sgRow.push({ v: rawVal !== "" ? val : "", s: cellStyle, t: rawVal !== "" ? "n" : "s" });
         }
+        wsData.push(sgRow);
 
-        const markStr = marks.join(" / ");
-        csvContent += `${i},${sgValStr},${vValStr},${markStr}\n`;
-      }
+        // 電圧
+        let vRow = [{ v: "電圧 (V)", s: styleRowLabel }];
+        for (let i = startCell; i <= endCell; i++) {
+          const rawVal = document.getElementById(`v-${i}`).value;
+          const val = parseFloat(rawVal);
+          let cellStyle = styleNormal;
+          if (!isNaN(val)) {
+            if (stats.v.max !== null && val === stats.v.max) cellStyle = styleMax;
+            else if (stats.v.min !== null && val === stats.v.min) cellStyle = styleMin;
+          }
+          vRow.push({ v: rawVal !== "" ? val : "", s: cellStyle, t: rawVal !== "" ? "n" : "s" });
+        }
+        wsData.push(vRow);
 
-      const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
-      const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
+        wsData.push([]); // 空行
+      };
+
+      appendBlock("1〜12番", 1, 12, styleHeader);
+      appendBlock("13〜24番", 13, 24, styleHeader2);
+
+      // ブック＆シート作成
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+      // 列幅の自動設定
+      const cols = [{ wch: 18 }]; // 1列目（ラベル部）
+      for (let i = 1; i <= 12; i++) cols.push({ wch: 10 }); // 2〜13列目（各セル値）
+      ws['!cols'] = cols;
+
+      XLSX.utils.book_append_sheet(wb, ws, "バッテリー測定結果");
+
+      // ファイル保存名
       const now = new Date();
       const timestamp = now.getFullYear() +
         String(now.getMonth() + 1).padStart(2, '0') +
         String(now.getDate()).padStart(2, '0') + "_" +
         String(now.getHours()).padStart(2, '0') +
         String(now.getMinutes()).padStart(2, '0');
-      
-      const a = document.createElement("a");
-      a.setAttribute("href", url);
-      a.setAttribute("download", `battery_data_${timestamp}.csv`);
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      speak("CSVファイルをダウンロードしました");
+
+      XLSX.writeFile(wb, `battery_data_${timestamp}.xlsx`);
+      speak("罫線と色つきのExcelファイルをダウンロードしました");
     });
   </script>
 </body>
