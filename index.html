@@ -627,7 +627,7 @@
       alert("お使いのブラウザは音声認識機能に対応していません。Google Chromeをお試しください。");
     }
 
-    // 装飾付きExcelファイル（.xlsx）の出力処理（A4縦1ページ完全最適化版）
+    // 装飾付きExcelファイル（.xlsx）の出力処理（タイトル追加・A4縦1ページ完全最適化版）
     document.getElementById('export-btn').addEventListener('click', () => {
       if (typeof XLSX === 'undefined') {
         alert("Excelライブラリの読み込みに失敗しました。インターネット接続を確認してください。");
@@ -650,12 +650,19 @@
       const vMinStr  = stats.v.min  !== null ? `${stats.v.min} (${stats.v.minCells.map(c=>c+'番').join('&')})`  : "-";
       const vMaxStr  = stats.v.max  !== null ? `${stats.v.max} (${stats.v.maxCells.map(c=>c+'番').join('&')})`  : "-";
 
-      // スタイル定義（フォントサイズを compact 9pt に統一）
+      // スタイル定義
       const thinBorder = {
         top: { style: "thin", color: { rgb: "CCCCCC" } },
         bottom: { style: "thin", color: { rgb: "CCCCCC" } },
         left: { style: "thin", color: { rgb: "CCCCCC" } },
         right: { style: "thin", color: { rgb: "CCCCCC" } }
+      };
+
+      // 大タイトル用スタイル（16pt・太字・ダークネイビー背景・白文字・中央揃え）
+      const styleMainTitle = {
+        font: { bold: true, size: 16, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "1F4E79" } },
+        alignment: { horizontal: "center", vertical: "center" }
       };
 
       const styleTitle = {
@@ -714,6 +721,11 @@
 
       // ワークシートデータ構築
       const wsData = [];
+
+      // 最上部に大きなタイトル行を追加（13列分の幅）
+      let mainTitleRow = [{ v: "バッテリー測定結果", s: styleMainTitle }];
+      for (let i = 1; i <= 12; i++) mainTitleRow.push({ v: "", s: styleMainTitle });
+      wsData.push(mainTitleRow);
 
       // 基本情報
       wsData.push([{ v: "■ 基本情報", s: styleTitle }, { v: "", s: styleTitle }]);
@@ -777,10 +789,19 @@
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-      // 列幅の調整（A4縦1ページにぴったり収まる幅）
+      // タイトル行（1行目 A1:M1）のセル結合
+      ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } }
+      ];
+
+      // 列幅の調整（A4縦1ページに収まる幅）
       const cols = [{ wch: 14 }];
       for (let i = 1; i <= 12; i++) cols.push({ wch: 5.5 });
       ws['!cols'] = cols;
+
+      // 行高の調整（タイトル行を高く設定）
+      const rows = [{ hpt: 32 }]; // 1行目（メインタイトル）を高さ32ptに設定
+      ws['!rows'] = rows;
 
       // 🖨️ A4縦1ページ自動収める印刷設定
       ws['!pageSetup'] = {
@@ -791,7 +812,7 @@
         fitToHeight: 1          // 縦幅1ページ（確実にA4縦1枚に集約）
       };
 
-      // 余白を狭く設定
+      // 余白設定
       ws['!margins'] = { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 };
       ws['!sheetViews'] = [{ showGridLines: true }];
 
