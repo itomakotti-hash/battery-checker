@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（1.15誤認識対策版）</title>
+  <title>バッテリーセル記録（フィードバック音ループ防止版）</title>
   <style>
     body { font-family: sans-serif; padding: 15px; max-width: 800px; margin: 0 auto; }
     .controls { 
@@ -72,7 +72,7 @@
       <span id="pending-info" class="pending-status"></span>
     </div>
     <div class="hint">
-      🔊 <b>数値誤判定対策済み：</b>「1.15」などの小数値をセル1番と誤認しないよう強化しました。
+      🛡️ <b>自己音声遮断機能有効：</b>システムが喋っている間の音声判定を無視します。
     </div>
   </div>
 
@@ -93,15 +93,33 @@
     const historyStack = [];
     let pendingCellNum = null;
     let pendingTimer = null;
-    let currentAutoCellNum = 1; // 自動送り用のセル保持
+    let currentAutoCellNum = 1;
+    let isSpeaking = false; // ★読み上げ中フラグ
 
-    // 音声合成（読み上げ）
+    // ★【強化】読み上げ処理（喋っている間はフラグをONにして自己音声を遮断）
     function speak(text) {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
+        
         const uttr = new SpeechSynthesisUtterance(text);
         uttr.lang = 'ja-JP';
         uttr.rate = 1.2;
+
+        uttr.onstart = () => {
+          isSpeaking = true;
+        };
+
+        uttr.onend = () => {
+          // 読み上げ終了後、わずかなマージン（300ms）を置いてから音声認識を再開
+          setTimeout(() => {
+            isSpeaking = false;
+          }, 300);
+        };
+
+        uttr.onerror = () => {
+          isSpeaking = false;
+        };
+
         window.speechSynthesis.speak(uttr);
       }
     }
@@ -190,14 +208,10 @@
     function normalizeSpeechText(text) {
       let t = text;
 
-      // 1. 小数点の誤認識補正
       t = t.replace(/点|てん|テン|一転|回転/g, '.');
-
-      // 2. 「6（ろく）」の判定補助
       t = t.replace(/ロック|録|六|ログ/g, '6');
       t = t.replace(/(?:ろく|ロク)\s*(?:番|セル)?/g, '6番');
 
-      // 3. 数字変換
       t = t.replace(/イチ/g, '1').replace(/ニ/g, '2').replace(/サン/g, '3')
            .replace(/ヨン/g, '4').replace(/ゴ/g, '5').replace(/ロク/g, '6')
            .replace(/ナナ/g, '7').replace(/ハチ/g, '8').replace(/キュウ/g, '9');
@@ -223,9 +237,7 @@
       return t;
     }
 
-    // ★【修正】セル番号の厳密抽出（小数点をセル番号と見なさない）
     function extractExplicitCellNumber(text) {
-      // 明示的に「番」「セル」「No.」が付いているものだけ検出
       const match = text.match(/(?:セル|セルナンバー|ナンバー|No|no)?\s*(\d{1,2})\s*(?:番|セル)/);
       if (match) {
         const num = parseInt(match[1], 10);
@@ -279,6 +291,12 @@
       });
 
       recognition.onresult = (event) => {
+        // ★【重要】システムが喋っている最中の認識結果は無視（フィードバックループ防止）
+        if (isSpeaking) {
+          console.log("自己音声を無視しました");
+          return;
+        }
+
         const lastIndex = event.results.length - 1;
         const rawText = event.results[lastIndex][0].transcript;
         
@@ -319,15 +337,12 @@
 
         const normalized = normalizeSpeechText(rawText);
         const explicitCellNum = extractExplicitCellNumber(normalized);
-
-        // 小数含む全ての数値抽出
         const floatMatches = normalized.match(/\d+\.\d+|\d+/g) || [];
 
-        // 1. 明示的なセル指定があった場合（例：「6番」「6番 1.15」）
+        // 1. 明示的なセル指定があった場合
         if (explicitCellNum !== null) {
           let valueStr = null;
           for (let n of floatMatches) {
-            // セル番号自体と一致しない数値を入力値と判定
             if (n !== String(explicitCellNum)) {
               valueStr = n;
               break;
@@ -349,7 +364,7 @@
           return;
         }
 
-        // 3. セル指定がないが数値がある場合（現在選択中のセルへ入力して次へ進む）
+        // 3. セル指定がないが数値がある場合
         if (floatMatches.length > 0) {
           applyValueToCell(currentAutoCellNum, floatMatches[0]);
         }
@@ -403,9 +418,9 @@
             targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
 
+          // 読み上げ実行（発声中はマイク判定がブロックされます）
           speak(`${cellNum}番、${val}`);
 
-          // 入力完了後、自動で次のセル番号を用意（最大24）
           if (cellNum < 24) {
             currentAutoCellNum = cellNum + 1;
           }
