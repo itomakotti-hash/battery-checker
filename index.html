@@ -58,6 +58,7 @@
     button { font-size: 0.95rem; padding: 8px 14px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; }
     #start-btn { background-color: #4CAF50; color: white; border: none; }
     #start-btn.listening { background-color: #f44336; }
+    #help-btn { background-color: #17a2b8; color: white; border: none; }
     #undo-btn { background-color: #ff9800; color: white; border: none; }
     #export-btn { background-color: #1D6F42; color: white; border: none; }
     
@@ -146,14 +147,6 @@
       <input type="text" id="company-name" placeholder="例: 〇〇産業株式会社">
     </div>
     <div class="info-group">
-      <label for="measurement-timing">測定区分:</label>
-      <select id="measurement-timing">
-        <option value="充電前">充電前</option>
-        <option value="充電後">充電後</option>
-        <option value="現地年次">現地年次</option>
-      </select>
-    </div>
-    <div class="info-group">
       <label for="model-type">型式:</label>
       <input type="text" id="model-type" placeholder="例: EB100">
     </div>
@@ -169,10 +162,19 @@
       <label for="mfg-number">MFG No.:</label>
       <input type="text" id="mfg-number" placeholder="例: MFG-2026-001">
     </div>
+    <div class="info-group">
+      <label for="measurement-timing">測定区分:</label>
+      <select id="measurement-timing">
+        <option value="充電前">充電前</option>
+        <option value="充電後">充電後</option>
+        <option value="現地年次">現地年次</option>
+      </select>
+    </div>
   </div>
 
   <div class="controls">
     <button id="start-btn">🎤 音声入力 開始</button>
+    <button id="help-btn">❓ 音声ガイド</button>
     <button id="undo-btn">↩️ 1つ戻す</button>
     <button id="export-btn">📊 Excelファイル（.xlsx）出力</button>
     <span id="status">停止中</span>
@@ -246,7 +248,7 @@
         
         const uttr = new SpeechSynthesisUtterance(text);
         uttr.lang = 'ja-JP';
-        uttr.rate = 1.2;
+        uttr.rate = 1.1;
 
         uttr.onstart = () => { isSpeaking = true; };
         uttr.onend = () => { 
@@ -265,6 +267,19 @@
         if (onEndCallback) onEndCallback();
       }
     }
+
+    // 音声使い方ガイドのアナウンス
+    document.getElementById('help-btn').addEventListener('click', () => {
+      const guideText = "音声入力の使い方を説明します。" +
+        "数値だけを『1点280』のように話すと、順番に自動入力されます。" +
+        "特定の場所に入れるには、『5番 1点280』のように番数を言います。" +
+        "『5番』とだけ言うと、5番の入力待ち状態になります。" +
+        "全体電圧は『トータル 48点5』と話します。" +
+        "『比重モード』や『電圧モード』と話すと、入力モードを切り替えられます。" +
+        "間違えた時は『戻す』、入力をやめる時は『終了』と言ってください。";
+      
+      speak(guideText);
+    });
 
     function updateMinMaxHighlights() {
       const stats = calculateMinMax();
@@ -737,14 +752,14 @@
       for (let i = 1; i <= 12; i++) mainTitleRow.push({ v: "", s: styleMainTitle });
       wsData.push(mainTitleRow);
 
-      // 基本情報
+      // 基本情報（MFG No.の次に測定区分を配置）
       wsData.push([{ v: "■ 基本情報", s: styleTitle }, { v: "", s: styleTitle }]);
       wsData.push([{ v: "会社名", s: styleRowLabel }, { v: companyName, s: styleNormalLeft }]);
-      wsData.push([{ v: "測定区分", s: styleRowLabel }, { v: measurementTiming, s: styleNormalLeft }]);
       wsData.push([{ v: "型式", s: styleRowLabel }, { v: modelType, s: styleNormalLeft }]);
       wsData.push([{ v: "バッテリー型式", s: styleRowLabel }, { v: batteryType, s: styleNormalLeft }]);
       wsData.push([{ v: "バッテリー容量", s: styleRowLabel }, { v: batteryCapacity, s: styleNormalLeft }]);
       wsData.push([{ v: "MFG No.", s: styleRowLabel }, { v: mfgNumber, s: styleNormalLeft }]);
+      wsData.push([{ v: "測定区分", s: styleRowLabel }, { v: measurementTiming, s: styleNormalLeft }]);
 
       // 全体情報
       wsData.push([{ v: "■ 全体情報", s: styleTitle }, { v: "", s: styleTitle }]);
