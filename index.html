@@ -457,7 +457,6 @@
         status.style.color = "#ff9800";
         startBtn.textContent = "⌛ 起動中...";
         
-        // 「音声入力を開始します」と読み上げ終わってからマイクをオンにする
         speak("音声入力を開始します", () => {
           try {
             recognition.start();
@@ -637,8 +636,11 @@
       }
 
       const stats = calculateMinMax();
-      const companyName = document.getElementById('company-name').value || "-";
-      const modelType = document.getElementById('model-type').value || "-";
+      const companyNameRaw = document.getElementById('company-name').value.trim();
+      const modelTypeRaw = document.getElementById('model-type').value.trim();
+
+      const companyName = companyNameRaw || "-";
+      const modelType = modelTypeRaw || "-";
       const batteryType = document.getElementById('battery-type').value || "-";
       const batteryCapacity = document.getElementById('battery-capacity').value || "-";
       const mfgNumber = document.getElementById('mfg-number').value || "-";
@@ -698,15 +700,15 @@
       };
 
       const styleMax = {
-        font: { bold: true, color: { rgb: "D32F2F" } }, // 赤太字
-        fill: { fgColor: { rgb: "FFEBEE" } },           // 薄赤背景
+        font: { bold: true, color: { rgb: "D32F2F" } },
+        fill: { fgColor: { rgb: "FFEBEE" } },
         border: thinBorder,
         alignment: { horizontal: "right", vertical: "center" }
       };
 
       const styleMin = {
-        font: { bold: true, color: { rgb: "1976D2" } }, // 青太字
-        fill: { fgColor: { rgb: "E3F2FD" } },           // 薄青背景
+        font: { bold: true, color: { rgb: "1976D2" } },
+        fill: { fgColor: { rgb: "E3F2FD" } },
         border: thinBorder,
         alignment: { horizontal: "right", vertical: "center" }
       };
@@ -714,7 +716,7 @@
       // ワークシートデータ構築
       const wsData = [];
 
-      // 基本情報（会社名・型式・バッテリー型式・バッテリー容量・MFGナンバー）
+      // 基本情報
       wsData.push([{ v: "■ 基本情報", s: styleTitle }, { v: "", s: styleTitle }]);
       wsData.push([{ v: "会社名", s: styleRowLabel }, { v: companyName, s: styleNormalLeft }]);
       wsData.push([{ v: "型式", s: styleRowLabel }, { v: modelType, s: styleNormalLeft }]);
@@ -786,6 +788,7 @@
 
       XLSX.utils.book_append_sheet(wb, ws, "バッテリー測定結果");
 
+      // 日付時刻フォーマット YYYYMMDD_HHMM
       const now = new Date();
       const timestamp = now.getFullYear() +
         String(now.getMonth() + 1).padStart(2, '0') +
@@ -793,7 +796,15 @@
         String(now.getHours()).padStart(2, '0') +
         String(now.getMinutes()).padStart(2, '0');
 
-      XLSX.writeFile(wb, `battery_data_${timestamp}.xlsx`);
+      // ファイル名に使用できない記号を除去
+      const sanitize = (str) => str.replace(/[\/\\?%*:|"<>]/g, '_');
+      const safeCompany = companyNameRaw ? sanitize(companyNameRaw) : "未設定";
+      const safeModel = modelTypeRaw ? sanitize(modelTypeRaw) : "未設定";
+
+      // 出力ファイル名: バッテリー測定結果_会社名_型式_日時.xlsx
+      const fileName = `バッテリー測定結果_${safeCompany}_${safeModel}_${timestamp}.xlsx`;
+
+      XLSX.writeFile(wb, fileName);
       speak("お疲れ様です。測定結果をExcelファイルに出力しました");
     });
   </script>
