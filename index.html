@@ -32,12 +32,13 @@
       font-size: 0.9rem;
       white-space: nowrap;
     }
-    .info-group input {
+    .info-group input, .info-group select {
       flex: 1;
       padding: 6px 10px;
       font-size: 0.95rem;
       border: 1px solid #ccc;
       border-radius: 4px;
+      background-color: #fff;
     }
 
     .controls { 
@@ -143,6 +144,14 @@
     <div class="info-group">
       <label for="company-name">会社名:</label>
       <input type="text" id="company-name" placeholder="例: 〇〇産業株式会社">
+    </div>
+    <div class="info-group">
+      <label for="measurement-timing">測定区分:</label>
+      <select id="measurement-timing">
+        <option value="充電前">充電前</option>
+        <option value="充電後">充電後</option>
+        <option value="現地年次">現地年次</option>
+      </select>
     </div>
     <div class="info-group">
       <label for="model-type">型式:</label>
@@ -637,6 +646,7 @@
       const stats = calculateMinMax();
       const companyNameRaw = document.getElementById('company-name').value.trim();
       const modelTypeRaw = document.getElementById('model-type').value.trim();
+      const measurementTiming = document.getElementById('measurement-timing').value;
 
       const companyName = companyNameRaw || "-";
       const modelType = modelTypeRaw || "-";
@@ -730,6 +740,7 @@
       // 基本情報
       wsData.push([{ v: "■ 基本情報", s: styleTitle }, { v: "", s: styleTitle }]);
       wsData.push([{ v: "会社名", s: styleRowLabel }, { v: companyName, s: styleNormalLeft }]);
+      wsData.push([{ v: "測定区分", s: styleRowLabel }, { v: measurementTiming, s: styleNormalLeft }]);
       wsData.push([{ v: "型式", s: styleRowLabel }, { v: modelType, s: styleNormalLeft }]);
       wsData.push([{ v: "バッテリー型式", s: styleRowLabel }, { v: batteryType, s: styleNormalLeft }]);
       wsData.push([{ v: "バッテリー容量", s: styleRowLabel }, { v: batteryCapacity, s: styleNormalLeft }]);
@@ -830,9 +841,10 @@
       const sanitize = (str) => str.replace(/[\/\\?%*:|"<>]/g, '_');
       const safeCompany = companyNameRaw ? sanitize(companyNameRaw) : "未設定";
       const safeModel = modelTypeRaw ? sanitize(modelTypeRaw) : "未設定";
+      const safeTiming = sanitize(measurementTiming);
 
-      // 出力ファイル名: バッテリー測定結果_会社名_型式_日時.xlsx
-      const fileName = `バッテリー測定結果_${safeCompany}_${safeModel}_${timestamp}.xlsx`;
+      // 出力ファイル名: バッテリー測定結果_会社名_測定区分_型式_日時.xlsx
+      const fileName = `バッテリー測定結果_${safeCompany}_${safeTiming}_${safeModel}_${timestamp}.xlsx`;
 
       XLSX.writeFile(wb, fileName);
       speak("お疲れ様です。測定結果をExcelファイルに出力しました");
