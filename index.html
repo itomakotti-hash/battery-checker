@@ -41,7 +41,6 @@
     <button id="export-btn">📊 Excel用CSV出力</button>
     <span id="status">停止中</span>
     
-    <!-- マイクが拾った言葉を画面に表示して確認できるように改善 -->
     <div class="recognized-text">認識結果: <span id="last-speech" style="font-weight:bold; color:#1a0dab;">-</span></div>
     <div class="hint">💡 コツ：「セル 3 比重 1 点 2 8 電圧 2 点 1 5」とはっきり発声してください</div>
   </div>
@@ -73,17 +72,15 @@
       tbody.appendChild(tr);
     }
 
-    // 日本語の数値・漢数字表記を全角半角数値に統一する強力な変換器
+    // 日本語の数値・漢数字表記を全角半角数値に統一する変換関数
     function normalizeJapaneseNumbers(text) {
       let t = text;
-      // 良くある読み間違い・表記の揺れを置換
       t = t.replace(/点|てん/g, '.');
       
-      // 漢数字・読みを半角数字に変換
       const kanjiMap = {
         'ゼロ':0, 'レイ':0, 'れい':0, '〇':0, '0':0,
         'イチ':1, 'いち':1, '一':1,
-        :2, 'に':2, '二':2,
+        'ニ':2, 'に':2, '二':2,
         'サン':3, 'さん':3, '三':3,
         'ヨン':4, 'よん':4, 'シ':4, 'し':4, '四':4,
         'ゴ':5, 'ご':5, '五':5,
@@ -94,16 +91,13 @@
         'ジュウ':10, 'じゅう':10, '十':10
       };
 
-      // 「セル十三」などの二桁対応簡易ロジック
       t = t.replace(/十([一二三四五六七八九123456789])/g, (_, p1) => 10 + (kanjiMap[p1] || parseInt(p1)));
       t = t.replace(/二十([一二三四56789])/g, (_, p1) => 20 + (kanjiMap[p1] || parseInt(p1)));
       t = t.replace(/二十/g, '20');
       t = t.replace(/十/g, '10');
 
-      // 全角数字を半角数字に
       t = t.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
 
-      // 孤立した単語変換
       for (let k in kanjiMap) {
         t = t.split(k).join(kanjiMap[k]);
       }
@@ -126,12 +120,16 @@
 
       startBtn.addEventListener('click', () => {
         if (!isListening) {
-          recognition.start();
-          status.textContent = "音声認識中...";
-          status.style.color = "green";
-          startBtn.textContent = "⏹️ 音声入力 停止";
-          startBtn.classList.add('listening');
-          isListening = true;
+          try {
+            recognition.start();
+            status.textContent = "音声認識中...";
+            status.style.color = "green";
+            startBtn.textContent = "⏹️ 音声入力 停止";
+            startBtn.classList.add('listening');
+            isListening = true;
+          } catch (e) {
+            console.error("開始エラー:", e);
+          }
         } else {
           recognition.stop();
           status.textContent = "停止中";
@@ -146,40 +144,29 @@
         const lastIndex = event.results.length - 1;
         const rawText = event.results[lastIndex][0].transcript;
         
-        // 1. 認識した生の言葉を画面に表示（デバッグ用）
         lastSpeech.textContent = rawText;
 
-        // 2. 表記揺れの正規化
         const normalized = normalizeJapaneseNumbers(rawText);
         console.log("変換後:", normalized);
 
-        // 3. セル番号、比重、電圧の抽出パターン強化
-        // 「セル3」「3番」「セル No 3」等に対応
         const cellMatch = normalized.match(/(?:セル|セルナンバー|ナンバー|No|no|番)?\s*(\d{1,2})/);
-        // 「比重 1.28」等に対応
         const sgMatch = normalized.match(/(?:比重|ひじゅう)\s*(\d(?:\.\d+)?)/);
-        // 「電圧 2.15」等に対応
         const vMatch = normalized.match(/(?:電圧|でんあつ)\s*(\d(?:\.\d+)?)/);
 
         if (cellMatch) {
           const cellNum = parseInt(cellMatch[1], 10);
           
-          // 1〜24の範囲内のみ処理
           if (cellNum >= 1 && cellNum <= 24) {
-            // 対象行をハイライト
             document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
             const targetRow = document.getElementById(`row-${cellNum}`);
             if (targetRow) {
               targetRow.classList.add('active-row');
-              // 画面を自動スクロールして入力行を見せる
               targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
 
-            // 比重が検出できたら入力
             if (sgMatch) {
               document.getElementById(`sg-${cellNum}`).value = sgMatch[1];
             }
-            // 電圧が検出できたら入力
             if (vMatch) {
               document.getElementById(`v-${cellNum}`).value = vMatch[1];
             }
@@ -187,9 +174,21 @@
         }
       };
 
-      recognition.onend = () => {
-        if (isListening) recognition.start();
+      recognition.onerror = (event) => {
+        console.error("音声認識エラー:", event.error);
+        status.textContent = "エラー: " + event.error;
+        status.style.color = "red";
       };
+
+      recognition.onend = () => {
+        if (isListening) {
+          try {
+            recognition.start();
+          } catch(e) {}
+        }
+      };
+    } else {
+      alert("お使いのブラウザは音声認識機能に対応していません。Google Chromeをお試しください。");
     }
 
     // 3. CSV出力機能
