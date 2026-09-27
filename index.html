@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（セル番号必須モード）</title>
+  <title>バッテリーセル記録（1つ戻す機能付き）</title>
   <style>
     body { font-family: sans-serif; padding: 15px; max-width: 800px; margin: 0 auto; }
     .controls { 
@@ -21,6 +21,7 @@
     button { font-size: 1rem; padding: 10px 16px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; }
     #start-btn { background-color: #4CAF50; color: white; border: none; }
     #start-btn.listening { background-color: #f44336; }
+    #undo-btn { background-color: #ff9800; color: white; border: none; }
     #export-btn { background-color: #2196F3; color: white; border: none; }
     
     .mode-selector {
@@ -52,6 +53,7 @@
 
   <div class="controls">
     <button id="start-btn">🎤 音声入力 開始</button>
+    <button id="undo-btn">↩️ 1つ戻す</button>
     <button id="export-btn">📊 Excel用CSV出力</button>
     <span id="status">停止中</span>
 
@@ -65,7 +67,7 @@
     
     <div class="recognized-text">認識結果: <span id="last-speech" style="font-weight:bold; color:#1a0dab;">-</span></div>
     <div class="hint" id="mode-hint">
-      ⚠️ 必ず「1番」「2番」などセル番号から発声してください。（例：「1番 1点28」）
+      ⚠️ 「1番」「2番」などセル番号から発声してください。（間違えたら<b>「戻す」「やり直し」</b>で直前を消せます）
     </div>
   </div>
 
@@ -83,6 +85,9 @@
   </table>
 
   <script>
+    // 変更履歴スタック（Undo用）
+    const historyStack = [];
+
     // 1. テーブル生成
     const tbody = document.getElementById('cell-table-body');
     for (let i = 1; i <= 24; i++) {
@@ -95,6 +100,34 @@
       `;
       tbody.appendChild(tr);
     }
+
+    // 1つ戻す (Undo) 実行関数
+    function undoLastAction() {
+      if (historyStack.length === 0) {
+        alert("戻せる操作履歴がありません。");
+        return;
+      }
+
+      const lastState = historyStack.pop();
+      
+      // 値を直前の状態へ復元
+      for (const inputId in lastState.values) {
+        document.getElementById(inputId).value = lastState.values[inputId];
+      }
+
+      // アクティブ行を直前の行へ復元
+      document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
+      if (lastState.activeCellNum) {
+        const targetRow = document.getElementById(`row-${lastState.activeCellNum}`);
+        if (targetRow) {
+          targetRow.classList.add('active-row');
+          targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    }
+
+    // 「1つ戻す」ボタンのクリックイベント
+    document.getElementById('undo-btn').addEventListener('click', undoLastAction);
 
     // 日本語の数値・漢数字表記を全角半角数値に統一する変換関数
     function normalizeJapaneseNumbers(text) {
@@ -170,13 +203,19 @@
         
         lastSpeech.textContent = rawText;
 
+        // 【音声コマンド判定】「戻す」「やり直し」「キャンセル」でUndoを実行
+        if (rawText.match(/戻す|もどす|やり直し|やりなおし|キャンセル/)) {
+          undoLastAction();
+          return;
+        }
+
         const normalized = normalizeJapaneseNumbers(rawText);
         console.log("変換後:", normalized);
 
         // セル番号パターン（「1番」「セル1」「No1」など）をチェック
         const cellMatch = normalized.match(/(?:セル|セルナンバー|ナンバー|No|no)?\s*(\d{1,2})\s*(?:番|セル)?/);
 
-        // 【安全ガード】「1番〜24番」のセル番号が検出されない発声はすべて無視して処理終了
+        // 「1番〜24番」のセル番号が検出されない発声は無視
         if (!cellMatch) {
           console.log("セル番号が含まれていないため無視します:", rawText);
           return;
@@ -184,18 +223,9 @@
 
         const cellNum = parseInt(cellMatch[1], 10);
         
-        // セル番号が 1〜24 の範囲外の場合も無視
         if (cellNum < 1 || cellNum > 24) {
           console.log("範囲外のセル番号のため無視します:", cellNum);
           return;
-        }
-
-        // --- セル番号（1〜24）が含まれている場合のみ、以下の入力処理を実行 ---
-        document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
-        const targetRow = document.getElementById(`row-${cellNum}`);
-        if (targetRow) {
-          targetRow.classList.add('active-row');
-          targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
 
         const currentMode = document.querySelector('input[name="input-target"]:checked').value;
@@ -213,15 +243,51 @@
           }
         }
 
+        // 現在選択されている行（復元用）を取得
+        const activeRow = document.querySelector('tr.active-row');
+        const prevActiveCellNum = activeRow ? parseInt(activeRow.id.replace('row-', ''), 10) : null;
+
+        // 変更前の状態を履歴（スタック）へ記録
+        const previousState = {
+          activeCellNum: prevActiveCellNum,
+          values: {
+            [`sg-${cellNum}`]: document.getElementById(`sg-${cellNum}`).value,
+            [`v-${cellNum}`]: document.getElementById(`v-${cellNum}`).value
+          }
+        };
+
+        // 値の更新処理
+        let updated = false;
+
         if (currentMode === 'sg' && val) {
           document.getElementById(`sg-${cellNum}`).value = val;
+          updated = true;
         } else if (currentMode === 'v' && val) {
           document.getElementById(`v-${cellNum}`).value = val;
+          updated = true;
         } else if (currentMode === 'both') {
           const sgMatch = normalized.match(/(?:比重|ひじゅう)\s*(\d(?:\.\d+)?)/);
           const vMatch = normalized.match(/(?:電圧|でんあつ)\s*(\d(?:\.\d+)?)/);
-          if (sgMatch) document.getElementById(`sg-${cellNum}`).value = sgMatch[1];
-          if (vMatch) document.getElementById(`v-${cellNum}`).value = vMatch[1];
+          if (sgMatch) {
+            document.getElementById(`sg-${cellNum}`).value = sgMatch[1];
+            updated = true;
+          }
+          if (vMatch) {
+            document.getElementById(`v-${cellNum}`).value = vMatch[1];
+            updated = true;
+          }
+        }
+
+        // 値が更新された場合のみ、履歴を追加してハイライトを移動
+        if (updated) {
+          historyStack.push(previousState);
+
+          document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
+          const targetRow = document.getElementById(`row-${cellNum}`);
+          if (targetRow) {
+            targetRow.classList.add('active-row');
+            targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
         }
       };
 
