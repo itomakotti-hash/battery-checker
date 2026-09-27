@@ -10,6 +10,35 @@
     body { font-family: sans-serif; padding: 15px; max-width: 600px; margin: 0 auto; background-color: #f8f9fa; }
     h1 { text-align: center; font-size: 1.4rem; margin-bottom: 15px; }
     
+    .company-info-container {
+      background: #fff;
+      padding: 12px 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      margin-bottom: 15px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .info-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .info-group label {
+      font-weight: bold;
+      width: 70px;
+      color: #333;
+      font-size: 0.95rem;
+    }
+    .info-group input {
+      flex: 1;
+      padding: 6px 10px;
+      font-size: 0.95rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
     .controls { 
       margin-bottom: 15px; 
       position: sticky; 
@@ -106,7 +135,19 @@
 </head>
 <body>
 
-  <h1>バッテリーセル記録（縦表示）</h1>
+  <h1>バッテリーセル記録</h1>
+
+  <!-- 会社名・型式入力エリア -->
+  <div class="company-info-container">
+    <div class="info-group">
+      <label for="company-name">会社名:</label>
+      <input type="text" id="company-name" placeholder="例: 〇〇産業株式会社">
+    </div>
+    <div class="info-group">
+      <label for="model-type">型式:</label>
+      <input type="text" id="model-type" placeholder="例: EB100">
+    </div>
+  </div>
 
   <div class="controls">
     <button id="start-btn">🎤 音声入力 開始</button>
@@ -566,6 +607,8 @@
       }
 
       const stats = calculateMinMax();
+      const companyName = document.getElementById('company-name').value || "-";
+      const modelType = document.getElementById('model-type').value || "-";
       const totalV = document.getElementById('total-voltage').value || "-";
 
       const sgMinStr = stats.sg.min !== null ? `${stats.sg.min} (${stats.sg.minCells.map(c=>c+'番').join('&')})` : "-";
@@ -615,6 +658,12 @@
         alignment: { horizontal: "right", vertical: "center" }
       };
 
+      const styleNormalLeft = {
+        font: { color: { rgb: "000000" } },
+        border: thinBorder,
+        alignment: { horizontal: "left", vertical: "center" }
+      };
+
       const styleMax = {
         font: { bold: true, color: { rgb: "D32F2F" } }, // 赤太字
         fill: { fgColor: { rgb: "FFEBEE" } },           // 薄赤背景
@@ -631,6 +680,12 @@
 
       // ワークシートデータ構築
       const wsData = [];
+
+      // 基本情報（会社名・型式）
+      wsData.push([{ v: "■ 基本情報", s: styleTitle }, { v: "", s: styleTitle }]);
+      wsData.push([{ v: "会社名", s: styleRowLabel }, { v: companyName, s: styleNormalLeft }]);
+      wsData.push([{ v: "型式", s: styleRowLabel }, { v: modelType, s: styleNormalLeft }]);
+      wsData.push([]);
 
       // 全体情報
       wsData.push([{ v: "■ 全体情報", s: styleTitle }, { v: "", s: styleTitle }]);
