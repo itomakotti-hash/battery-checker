@@ -231,7 +231,8 @@
     let currentAutoCellNum = 1;
     let isSpeaking = false;
 
-    function speak(text) {
+    // 読み上げ完了時のコールバック関数に対応
+    function speak(text, onEndCallback = null) {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
         
@@ -240,10 +241,20 @@
         uttr.rate = 1.2;
 
         uttr.onstart = () => { isSpeaking = true; };
-        uttr.onend = () => { setTimeout(() => { isSpeaking = false; }, 300); };
-        uttr.onerror = () => { isSpeaking = false; };
+        uttr.onend = () => { 
+          setTimeout(() => { 
+            isSpeaking = false; 
+            if (onEndCallback) onEndCallback();
+          }, 300); 
+        };
+        uttr.onerror = () => { 
+          isSpeaking = false; 
+          if (onEndCallback) onEndCallback();
+        };
 
         window.speechSynthesis.speak(uttr);
+      } else {
+        if (onEndCallback) onEndCallback();
       }
     }
 
@@ -442,17 +453,23 @@
       }
 
       function startListening() {
-        try {
-          recognition.start();
-          status.textContent = "音声認識中...";
-          status.style.color = "green";
-          startBtn.textContent = "⏹️ 音声入力 停止";
-          startBtn.classList.add('listening');
-          isListening = true;
-          speak("音声入力を開始します");
-        } catch (e) {
-          console.error("開始エラー:", e);
-        }
+        status.textContent = "準備中...";
+        status.style.color = "#ff9800";
+        startBtn.textContent = "⌛ 起動中...";
+        
+        // 「音声入力を開始します」と読み上げ終わってからマイクをオンにする
+        speak("音声入力を開始します", () => {
+          try {
+            recognition.start();
+            status.textContent = "音声認識中...";
+            status.style.color = "green";
+            startBtn.textContent = "⏹️ 音声入力 停止";
+            startBtn.classList.add('listening');
+            isListening = true;
+          } catch (e) {
+            console.error("開始エラー:", e);
+          }
+        });
       }
 
       startBtn.addEventListener('click', () => {
