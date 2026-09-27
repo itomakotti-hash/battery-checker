@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（全体電圧入力機能付き）</title>
+  <title>バッテリーセル記録（最高・最低値マーク＆集計機能付き）</title>
   <style>
     body { font-family: sans-serif; padding: 15px; max-width: 800px; margin: 0 auto; }
     .controls { 
@@ -17,6 +17,7 @@
       flex-wrap: wrap;
       gap: 10px;
       align-items: center;
+      z-index: 10;
     }
     button { font-size: 1rem; padding: 10px 16px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; }
     #start-btn { background-color: #4CAF50; color: white; border: none; }
@@ -62,10 +63,23 @@
     .pending-status { color: #d9534f; font-weight: bold; margin-left: 10px; }
     .hint { width: 100%; color: #555; font-size: 0.85rem; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; position: relative; }
     th { background: #f0f0f0; }
-    input { width: 80%; padding: 6px; text-align: right; font-size: 1rem; }
+    .input-wrapper { display: flex; align-items: center; justify-content: center; gap: 5px; }
+    input { width: 70%; padding: 6px; text-align: right; font-size: 1rem; }
     
+    /* マーク（バッチ）用スタイル */
+    .badge {
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: bold;
+      color: white;
+      white-space: nowrap;
+    }
+    .badge-max { background-color: #e53935; } /* 赤：最高値 */
+    .badge-min { background-color: #1e88e5; } /* 青：最低値 */
+
     .active-row { background-color: #e6f7ff; }
     .pending-row { background-color: #fffbe6; outline: 2px dashed #ffc107; }
   </style>
@@ -100,7 +114,7 @@
       <span id="pending-info" class="pending-status"></span>
     </div>
     <div class="hint">
-      💡 <b>ヒント：</b>「トータル 48.5」「全体 52点0」と言うと全体電圧に入力されます。
+      🏷️ <b>自動マーク機能：</b>入力された数値から自動で最高値（<span style="color:#e53935;font-weight:bold;">赤:最高</span>）と最低値（<span style="color:#1e88e5;font-weight:bold;">青:最低</span>）を表示します。
     </div>
   </div>
 
@@ -148,10 +162,85 @@
       tr.id = `row-${i}`;
       tr.innerHTML = `
         <td>Cell ${i}</td>
-        <td><input type="number" step="0.001" id="sg-${i}" placeholder="例: 1.280"></td>
-        <td><input type="number" step="0.01" id="v-${i}" placeholder="例: 2.15"></td>
+        <td>
+          <div class="input-wrapper">
+            <input type="number" step="0.001" id="sg-${i}" placeholder="例: 1.280" oninput="updateMinMaxHighlights()">
+            <span id="badge-sg-${i}"></span>
+          </div>
+        </td>
+        <td>
+          <div class="input-wrapper">
+            <input type="number" step="0.01" id="v-${i}" placeholder="例: 2.15" oninput="updateMinMaxHighlights()">
+            <span id="badge-v-${i}"></span>
+          </div>
+        </td>
       `;
       tbody.appendChild(tr);
+    }
+
+    // ★【新機能】画面上の最低値・最高値ハイライト表示更新
+    function updateMinMaxHighlights() {
+      const stats = calculateMinMax();
+
+      for (let i = 1; i <= 24; i++) {
+        const badgeSg = document.getElementById(`badge-sg-${i}`);
+        const badgeV = document.getElementById(`badge-v-${i}`);
+        badgeSg.innerHTML = '';
+        badgeV.innerHTML = '';
+
+        const sgVal = parseFloat(document.getElementById(`sg-${i}`).value);
+        const vVal = parseFloat(document.getElementById(`v-${i}`).value);
+
+        // 比重のマーク
+        if (!isNaN(sgVal)) {
+          if (stats.sg.max !== null && sgVal === stats.sg.max) {
+            badgeSg.innerHTML = '<span class="badge badge-max">最高</span>';
+          } else if (stats.sg.min !== null && sgVal === stats.sg.min) {
+            badgeSg.innerHTML = '<span class="badge badge-min">最低</span>';
+          }
+        }
+
+        // 電圧のマーク
+        if (!isNaN(vVal)) {
+          if (stats.v.max !== null && vVal === stats.v.max) {
+            badgeV.innerHTML = '<span class="badge badge-max">最高</span>';
+          } else if (stats.v.min !== null && vVal === stats.v.min) {
+            badgeV.innerHTML = '<span class="badge badge-min">最低</span>';
+          }
+        }
+      }
+    }
+
+    // ★【新機能】最小・最大値の計算ロジック
+    function calculateMinMax() {
+      let sgList = [];
+      let vList = [];
+
+      for (let i = 1; i <= 24; i++) {
+        const sgVal = parseFloat(document.getElementById(`sg-${i}`).value);
+        const vVal = parseFloat(document.getElementById(`v-${i}`).value);
+
+        if (!isNaN(sgVal)) sgList.push({ cell: i, val: sgVal });
+        if (!isNaN(vVal)) vList.push({ cell: i, val: vVal });
+      }
+
+      const getStats = (list) => {
+        if (list.length === 0) return { min: null, max: null, minCells: [], maxCells: [] };
+        const vals = list.map(item => item.val);
+        const min = Math.min(...vals);
+        const max = Math.max(...vals);
+
+        // 複数セルが同値の可能性にも対応
+        const minCells = list.filter(item => item.val === min).map(item => item.cell);
+        const maxCells = list.filter(item => item.val === max).map(item => item.cell);
+
+        return { min, max, minCells, maxCells };
+      };
+
+      return {
+        sg: getStats(sgList),
+        v: getStats(vList)
+      };
     }
 
     function setPendingCell(cellNum) {
@@ -221,6 +310,7 @@
         }
       }
       clearPendingCell();
+      updateMinMaxHighlights();
       speak("1つ戻しました");
     }
 
@@ -328,7 +418,7 @@
 
         const normalized = normalizeSpeechText(rawText);
 
-        // ★【新規】全体電圧の判定（「トータル」「全体」「合計」「総電圧」キーワード）
+        // 全体電圧の判定
         if (rawText.match(/トータル|全体|ぜんたい|合計|ごうけい|総電圧|全電圧/)) {
           const numMatch = normalized.match(/\d+\.\d+|\d+/);
           if (numMatch) {
@@ -452,6 +542,7 @@
             targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
 
+          updateMinMaxHighlights(); // ハイライト表示更新
           speak(`${cellNum}番、${val}`);
 
           if (cellNum < 24) {
@@ -475,16 +566,43 @@
       alert("お使いのブラウザは音声認識機能に対応していません。Google Chromeをお試しください。");
     }
 
-    // ★【修正】CSV出力に「全体電圧」を含める
+    // ★【機能拡張】集計情報（最低値・最高値・マーク）を含むCSV出力
     document.getElementById('export-btn').addEventListener('click', () => {
-      const totalV = document.getElementById('total-voltage').value || "";
-      let csvContent = `全体電圧 (V),${totalV},\n`;
-      csvContent += "セル No.,比重 (S.G.),電圧 (V)\n";
+      const stats = calculateMinMax();
+      const totalV = document.getElementById('total-voltage').value || "-";
+
+      const sgMinStr = stats.sg.min !== null ? `${stats.sg.min} (Cell ${stats.sg.minCells.join('&')})` : "-";
+      const sgMaxStr = stats.sg.max !== null ? `${stats.sg.max} (Cell ${stats.sg.maxCells.join('&')})` : "-";
+      const vMinStr  = stats.v.min  !== null ? `${stats.v.min} (Cell ${stats.v.minCells.join('&')})`  : "-";
+      const vMaxStr  = stats.v.max  !== null ? `${stats.v.max} (Cell ${stats.v.maxCells.join('&')})`  : "-";
+
+      let csvContent = `■ 全体情報,,,\n`;
+      csvContent += `全体電圧 (V),${totalV},,\n`;
+      csvContent += `比重 最低値 (S.G.),${sgMinStr},,\n`;
+      csvContent += `比重 最高値 (S.G.),${sgMaxStr},,\n`;
+      csvContent += `電圧 最低値 (V),${vMinStr},,\n`;
+      csvContent += `電圧 最高値 (V),${vMaxStr},,\n\n`;
+
+      csvContent += "セル No.,比重 (S.G.),電圧 (V),備考・マーク\n";
 
       for (let i = 1; i <= 24; i++) {
-        const sg = document.getElementById(`sg-${i}`).value || "";
-        const v = document.getElementById(`v-${i}`).value || "";
-        csvContent += `Cell ${i},${sg},${v}\n`;
+        const sgValStr = document.getElementById(`sg-${i}`).value || "";
+        const vValStr = document.getElementById(`v-${i}`).value || "";
+        const sgVal = parseFloat(sgValStr);
+        const vVal = parseFloat(vValStr);
+
+        let marks = [];
+        if (!isNaN(sgVal)) {
+          if (stats.sg.max !== null && sgVal === stats.sg.max) marks.push("比重[最高]");
+          if (stats.sg.min !== null && sgVal === stats.sg.min) marks.push("比重[最低]");
+        }
+        if (!isNaN(vVal)) {
+          if (stats.v.max !== null && vVal === stats.v.max) marks.push("電圧[最高]");
+          if (stats.v.min !== null && vVal === stats.v.min) marks.push("電圧[最低]");
+        }
+
+        const markStr = marks.join(" / ");
+        csvContent += `Cell ${i},${sgValStr},${vValStr},${markStr}\n`;
       }
 
       const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
@@ -503,7 +621,7 @@
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      speak("CSVファイルをダウンロードしました");
+      speak("集計データ入りのCSVファイルをダウンロードしました");
     });
   </script>
 </body>
