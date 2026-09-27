@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（音声読み上げ応答対応）</title>
+  <title>バッテリーセル記録（1.15誤認識対策版）</title>
   <style>
     body { font-family: sans-serif; padding: 15px; max-width: 800px; margin: 0 auto; }
     .controls { 
@@ -72,7 +72,7 @@
       <span id="pending-info" class="pending-status"></span>
     </div>
     <div class="hint">
-      🔊 <b>音声フィードバック：</b>入力された数値やモードの切り替えを音声で読み上げます。
+      🔊 <b>数値誤判定対策済み：</b>「1.15」などの小数値をセル1番と誤認しないよう強化しました。
     </div>
   </div>
 
@@ -93,14 +93,15 @@
     const historyStack = [];
     let pendingCellNum = null;
     let pendingTimer = null;
+    let currentAutoCellNum = 1; // 自動送り用のセル保持
 
-    // 【音声合成】読み上げ処理関数
+    // 音声合成（読み上げ）
     function speak(text) {
       if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); // 前の読み上げがあれば中断
+        window.speechSynthesis.cancel();
         const uttr = new SpeechSynthesisUtterance(text);
         uttr.lang = 'ja-JP';
-        uttr.rate = 1.2; // 少し早めのテンポでスムーズに
+        uttr.rate = 1.2;
         window.speechSynthesis.speak(uttr);
       }
     }
@@ -121,6 +122,7 @@
     function setPendingCell(cellNum) {
       clearPendingCellUI();
       pendingCellNum = cellNum;
+      currentAutoCellNum = cellNum;
       const pendingInfo = document.getElementById('pending-info');
       
       if (cellNum) {
@@ -131,7 +133,6 @@
           targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
 
-        // 7秒間数値が来なかったら自動クリア
         clearTimeout(pendingTimer);
         pendingTimer = setTimeout(() => {
           clearPendingCell();
@@ -172,6 +173,7 @@
       }
       document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
       if (lastState.activeCellNum) {
+        currentAutoCellNum = lastState.activeCellNum;
         const targetRow = document.getElementById(`row-${lastState.activeCellNum}`);
         if (targetRow) {
           targetRow.classList.add('active-row');
@@ -184,10 +186,18 @@
 
     document.getElementById('undo-btn').addEventListener('click', undoLastAction);
 
-    // テキスト正規化
+    // テキスト補正関数
     function normalizeSpeechText(text) {
       let t = text;
+
+      // 1. 小数点の誤認識補正
       t = t.replace(/点|てん|テン|一転|回転/g, '.');
+
+      // 2. 「6（ろく）」の判定補助
+      t = t.replace(/ロック|録|六|ログ/g, '6');
+      t = t.replace(/(?:ろく|ロク)\s*(?:番|セル)?/g, '6番');
+
+      // 3. 数字変換
       t = t.replace(/イチ/g, '1').replace(/ニ/g, '2').replace(/サン/g, '3')
            .replace(/ヨン/g, '4').replace(/ゴ/g, '5').replace(/ロク/g, '6')
            .replace(/ナナ/g, '7').replace(/ハチ/g, '8').replace(/キュウ/g, '9');
@@ -208,8 +218,20 @@
       for (let k in kanjiMap) {
         t = t.split(k).join(kanjiMap[k]);
       }
+      
       t = t.replace(/(\d+)\s*\.\s*(\d+)/g, '$1.$2');
       return t;
+    }
+
+    // ★【修正】セル番号の厳密抽出（小数点をセル番号と見なさない）
+    function extractExplicitCellNumber(text) {
+      // 明示的に「番」「セル」「No.」が付いているものだけ検出
+      const match = text.match(/(?:セル|セルナンバー|ナンバー|No|no)?\s*(\d{1,2})\s*(?:番|セル)/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num >= 1 && num <= 24) return num;
+      }
+      return null;
     }
 
     // 音声認識（Web Speech API）
@@ -284,7 +306,7 @@
           }
         }
 
-        // Undo・クリアコマンド
+        // Undo・クリア
         if (rawText.match(/戻す|もどす|やり直し|キャンセル/)) {
           undoLastAction();
           return;
@@ -296,45 +318,46 @@
         }
 
         const normalized = normalizeSpeechText(rawText);
+        const explicitCellNum = extractExplicitCellNumber(normalized);
 
-        const cellMatch = normalized.match(/(?:セル|セルナンバー|ナンバー|No|no)?\s*(\d{1,2})\s*(?:番|セル)?/);
-        
-        let detectedCellNum = null;
-        if (cellMatch) {
-          const parsed = parseInt(cellMatch[1], 10);
-          if (parsed >= 1 && parsed <= 24) {
-            detectedCellNum = parsed;
-          }
-        }
+        // 小数含む全ての数値抽出
+        const floatMatches = normalized.match(/\d+\.\d+|\d+/g) || [];
 
-        const numbers = normalized.match(/\d+(?:\.\d+)?/g) || [];
-
-        // 判定1: セル番号指定あり
-        if (detectedCellNum) {
+        // 1. 明示的なセル指定があった場合（例：「6番」「6番 1.15」）
+        if (explicitCellNum !== null) {
           let valueStr = null;
-          for (let n of numbers) {
-            if (parseFloat(n) !== detectedCellNum) {
+          for (let n of floatMatches) {
+            // セル番号自体と一致しない数値を入力値と判定
+            if (n !== String(explicitCellNum)) {
               valueStr = n;
               break;
             }
           }
 
           if (valueStr !== null) {
-            applyValueToCell(detectedCellNum, valueStr);
+            applyValueToCell(explicitCellNum, valueStr);
           } else {
-            setPendingCell(detectedCellNum);
-            speak(`${detectedCellNum}番`);
+            setPendingCell(explicitCellNum);
+            speak(`${explicitCellNum}番`);
           }
           return;
         }
 
-        // 判定2: 保留セルがあり数値指定あり
-        if (pendingCellNum && numbers.length > 0) {
-          applyValueToCell(pendingCellNum, numbers[0]);
+        // 2. セル保留中（指定済み）で数値が入力された場合
+        if (pendingCellNum && floatMatches.length > 0) {
+          applyValueToCell(pendingCellNum, floatMatches[0]);
+          return;
+        }
+
+        // 3. セル指定がないが数値がある場合（現在選択中のセルへ入力して次へ進む）
+        if (floatMatches.length > 0) {
+          applyValueToCell(currentAutoCellNum, floatMatches[0]);
         }
       };
 
       function applyValueToCell(cellNum, val) {
+        if (cellNum < 1 || cellNum > 24) return;
+
         const currentMode = document.querySelector('input[name="input-target"]:checked').value;
         const activeRow = document.querySelector('tr.active-row');
         const prevActiveCellNum = activeRow ? parseInt(activeRow.id.replace('row-', ''), 10) : null;
@@ -356,10 +379,10 @@
           document.getElementById(`v-${cellNum}`).value = val;
           updated = true;
         } else if (currentMode === 'both') {
-          if (val > 1.0 && val < 2.0) {
+          if (parseFloat(val) > 1.0 && parseFloat(val) < 2.0) {
             document.getElementById(`sg-${cellNum}`).value = val;
             updated = true;
-          } else if (val >= 2.0) {
+          } else if (parseFloat(val) >= 2.0) {
             document.getElementById(`v-${cellNum}`).value = val;
             updated = true;
           }
@@ -380,8 +403,12 @@
             targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
 
-          // ★読み上げ応答（例: 「1番、1.28」）
           speak(`${cellNum}番、${val}`);
+
+          // 入力完了後、自動で次のセル番号を用意（最大24）
+          if (cellNum < 24) {
+            currentAutoCellNum = cellNum + 1;
+          }
         }
       }
 
