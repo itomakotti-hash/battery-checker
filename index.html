@@ -3,27 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（音声入力 & Excel出力）</title>
+  <title>バッテリーセル記録（高精度音声入力）</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+    body { font-family: sans-serif; padding: 15px; max-width: 800px; margin: 0 auto; }
     .controls { 
-      margin-bottom: 20px; 
+      margin-bottom: 15px; 
       position: sticky; 
       top: 0; 
       background: #fff; 
-      padding: 15px 0; 
+      padding: 10px 0; 
       border-bottom: 2px solid #ddd;
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       align-items: center;
     }
-    button { font-size: 1rem; padding: 10px 18px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; }
+    button { font-size: 1rem; padding: 10px 16px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; }
     #start-btn { background-color: #4CAF50; color: white; border: none; }
     #start-btn.listening { background-color: #f44336; }
     #export-btn { background-color: #2196F3; color: white; border: none; }
-    #status { font-weight: bold; color: #555; margin-left: 5px; }
-    .hint { width: 100%; margin-top: 5px; color: #666; font-size: 0.9rem; }
+    #status { font-weight: bold; color: #555; }
+    .recognized-text { width: 100%; font-size: 0.95rem; background: #f9f9f9; padding: 8px; border: 1px solid #ddd; border-radius: 4px; color: #333; }
+    .hint { width: 100%; color: #666; font-size: 0.85rem; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
     th { background: #f0f0f0; }
@@ -37,9 +38,12 @@
 
   <div class="controls">
     <button id="start-btn">🎤 音声入力 開始</button>
-    <button id="export-btn">📊 Excel用CSVダウンロード</button>
+    <button id="export-btn">📊 Excel用CSV出力</button>
     <span id="status">停止中</span>
-    <div class="hint">発声例：「セル 1 比重 1 点 28 電圧 2 点 15」</div>
+    
+    <!-- マイクが拾った言葉を画面に表示して確認できるように改善 -->
+    <div class="recognized-text">認識結果: <span id="last-speech" style="font-weight:bold; color:#1a0dab;">-</span></div>
+    <div class="hint">💡 コツ：「セル 3 比重 1 点 2 8 電圧 2 点 1 5」とはっきり発声してください</div>
   </div>
 
   <table>
@@ -51,12 +55,12 @@
       </tr>
     </thead>
     <tbody id="cell-table-body">
-      <!-- 24セル分を自動生成 -->
+      <!-- 24セル生成 -->
     </tbody>
   </table>
 
   <script>
-    // 1. テーブル（24セル）生成
+    // 1. テーブル生成
     const tbody = document.getElementById('cell-table-body');
     for (let i = 1; i <= 24; i++) {
       const tr = document.createElement('tr');
@@ -69,12 +73,47 @@
       tbody.appendChild(tr);
     }
 
+    // 日本語の数値・漢数字表記を全角半角数値に統一する強力な変換器
+    function normalizeJapaneseNumbers(text) {
+      let t = text;
+      // 良くある読み間違い・表記の揺れを置換
+      t = t.replace(/点|てん/g, '.');
+      
+      // 漢数字・読みを半角数字に変換
+      const kanjiMap = {
+        'ゼロ':0, 'レイ':0, 'れい':0, '〇':0, '0':0,
+        'イチ':1, 'いち':1, '一':1,
+        :2, 'に':2, '二':2,
+        'サン':3, 'さん':3, '三':3,
+        'ヨン':4, 'よん':4, 'シ':4, 'し':4, '四':4,
+        'ゴ':5, 'ご':5, '五':5,
+        'ロク':6, 'ろく':6, '六':6,
+        'ナナ':7, 'なな':7, 'シチ':7, 'しち':7, '七':7,
+        'ハチ':8, 'はち':8, '八':8,
+        'キュウ':9, 'きゅう':9, 'ク':9, 'く':9, '九':9,
+        'ジュウ':10, 'じゅう':10, '十':10
+      };
+
+      // 「セル十三」などの二桁対応簡易ロジック
+      t = t.replace(/十([一二三四五六七八九123456789])/g, (_, p1) => 10 + (kanjiMap[p1] || parseInt(p1)));
+      t = t.replace(/二十([一二三四56789])/g, (_, p1) => 20 + (kanjiMap[p1] || parseInt(p1)));
+      t = t.replace(/二十/g, '20');
+      t = t.replace(/十/g, '10');
+
+      // 全角数字を半角数字に
+      t = t.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
+
+      // 孤立した単語変換
+      for (let k in kanjiMap) {
+        t = t.split(k).join(kanjiMap[k]);
+      }
+      return t;
+    }
+
     // 2. 音声認識（Web Speech API）
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     
-    if (!SpeechRecognition) {
-      alert("お使いのブラウザは音声認識に対応していません。Google Chromeをお試しください。");
-    } else {
+    if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.lang = 'ja-JP';
       recognition.continuous = true;
@@ -82,6 +121,7 @@
 
       const startBtn = document.getElementById('start-btn');
       const status = document.getElementById('status');
+      const lastSpeech = document.getElementById('last-speech');
       let isListening = false;
 
       startBtn.addEventListener('click', () => {
@@ -104,31 +144,42 @@
 
       recognition.onresult = (event) => {
         const lastIndex = event.results.length - 1;
-        let text = event.results[lastIndex][0].transcript;
-        console.log("認識結果:", text);
+        const rawText = event.results[lastIndex][0].transcript;
+        
+        // 1. 認識した生の言葉を画面に表示（デバッグ用）
+        lastSpeech.textContent = rawText;
 
-        // 音声テキストの補正・正規化
-        text = text.replace(/点/g, '.')
-                   .replace(/いち/g, '1').replace(/に/g, '2').replace(/さん/g, '3')
-                   .replace(/よん|し/g, '4').replace(/ご/g, '5').replace(/ろく/g, '6')
-                   .replace(/なな|しち/g, '7').replace(/はち/g, '8').replace(/きゅう|く/g, '9')
-                   .replace(/ぜろ|れい/g, '0');
+        // 2. 表記揺れの正規化
+        const normalized = normalizeJapaneseNumbers(rawText);
+        console.log("変換後:", normalized);
 
-        const cellMatch = text.match(/(?:セル|ばん|No|no)?\s*(\d{1,2})/);
-        const sgMatch = text.match(/比重\s*(\d(?:\.\d+)?)/);
-        const vMatch = text.match(/電圧\s*(\d(?:\.\d+)?)/);
+        // 3. セル番号、比重、電圧の抽出パターン強化
+        // 「セル3」「3番」「セル No 3」等に対応
+        const cellMatch = normalized.match(/(?:セル|セルナンバー|ナンバー|No|no|番)?\s*(\d{1,2})/);
+        // 「比重 1.28」等に対応
+        const sgMatch = normalized.match(/(?:比重|ひじゅう)\s*(\d(?:\.\d+)?)/);
+        // 「電圧 2.15」等に対応
+        const vMatch = normalized.match(/(?:電圧|でんあつ)\s*(\d(?:\.\d+)?)/);
 
         if (cellMatch) {
           const cellNum = parseInt(cellMatch[1], 10);
           
+          // 1〜24の範囲内のみ処理
           if (cellNum >= 1 && cellNum <= 24) {
+            // 対象行をハイライト
             document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
             const targetRow = document.getElementById(`row-${cellNum}`);
-            if (targetRow) targetRow.classList.add('active-row');
+            if (targetRow) {
+              targetRow.classList.add('active-row');
+              // 画面を自動スクロールして入力行を見せる
+              targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
 
+            // 比重が検出できたら入力
             if (sgMatch) {
               document.getElementById(`sg-${cellNum}`).value = sgMatch[1];
             }
+            // 電圧が検出できたら入力
             if (vMatch) {
               document.getElementById(`v-${cellNum}`).value = vMatch[1];
             }
@@ -141,25 +192,18 @@
       };
     }
 
-    // 3. Excel用CSVのエクスポート機能（文字化け防止BOM付き）
+    // 3. CSV出力機能
     document.getElementById('export-btn').addEventListener('click', () => {
       let csvContent = "セル No.,比重 (S.G.),電圧 (V)\n";
-
       for (let i = 1; i <= 24; i++) {
         const sg = document.getElementById(`sg-${i}`).value || "";
         const v = document.getElementById(`v-${i}`).value || "";
         csvContent += `Cell ${i},${sg},${v}\n`;
       }
-
-      // 日本語Excelでの文字化け防止（BOMヘッダー \uFEFF を付与）
       const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
       const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
-      
-      // ダウンロード実行
       const link = document.createElement("a");
       const url = URL.createObjectURL(blob);
-      
-      // 日時付きファイル名を作成（例: battery_data_20260927_103000.csv）
       const now = new Date();
       const timestamp = now.getFullYear() +
         String(now.getMonth() + 1).padStart(2, '0') +
