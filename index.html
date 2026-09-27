@@ -783,8 +783,22 @@
       const ws = XLSX.utils.aoa_to_sheet(wsData);
 
       const cols = [{ wch: 18 }];
-      for (let i = 1; i <= 12; i++) cols.push({ wch: 10 });
+      for (let i = 1; i <= 12; i++) cols.push({ wch: 7 });
       ws['!cols'] = cols;
+
+      // 🖨️ A4縦印刷設定の追加
+      ws['!pageSetup'] = {
+        paperSize: 9,          // 9 = A4用紙
+        orientation: 'portrait',// 縦向き (portrait)
+        fitToWidth: 1,         // 横幅を1ページに収める
+        fitToHeight: 0         // 縦は自動（内容に合わせて調整）
+      };
+
+      // ページの自動フィットを有効化
+      ws['!sheetViews'] = [{ showGridLines: true }];
+      if (!ws['!margins']) {
+        ws['!margins'] = { left: 0.5, right: 0.5, top: 0.55, bottom: 0.55, header: 0.3, footer: 0.3 };
+      }
 
       XLSX.utils.book_append_sheet(wb, ws, "バッテリー測定結果");
 
