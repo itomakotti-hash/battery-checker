@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（完全音声操作対応）</title>
+  <title>バッテリーセル記録（間隔対応・音声操作対応）</title>
   <style>
     body { font-family: sans-serif; padding: 15px; max-width: 800px; margin: 0 auto; }
     .controls { 
@@ -39,6 +39,7 @@
 
     #status { font-weight: bold; color: #555; }
     .recognized-text { width: 100%; font-size: 0.95rem; background: #f9f9f9; padding: 8px; border: 1px solid #ddd; border-radius: 4px; color: #333; }
+    .pending-status { color: #d9534f; font-weight: bold; margin-left: 10px; }
     .hint { width: 100%; color: #d9534f; font-size: 0.85rem; font-weight: bold; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
@@ -65,9 +66,12 @@
       <label><input type="radio" name="input-target" id="radio-both" value="both"> 🔄 両方モード</label>
     </div>
     
-    <div class="recognized-text">認識結果: <span id="last-speech" style="font-weight:bold; color:#1a0dab;">-</span></div>
+    <div class="recognized-text">
+      認識結果: <span id="last-speech" style="font-weight:bold; color:#1a0dab;">-</span>
+      <span id="pending-info" class="pending-status"></span>
+    </div>
     <div class="hint" id="mode-hint">
-      🗣️ <b>音声コマンド：</b>「比重モード」「電圧モード」「戻す」「終了」（または「おわり」「停止」）
+      💡 「1番」と言ってから間が空いても、数値（「1点28」など）を待機して記録します。
     </div>
   </div>
 
@@ -87,6 +91,40 @@
   <script>
     // 変更履歴スタック（Undo用）
     const historyStack = [];
+
+    // 【新機能】番号保留管理（間隔対策）
+    let pendingCellNum = null;
+    let pendingTimer = null;
+
+    function setPendingCell(cellNum) {
+      pendingCellNum = cellNum;
+      const pendingInfo = document.getElementById('pending-info');
+      if (cellNum) {
+        pendingInfo.textContent = `⏳ Cell ${cellNum} の数値待機中...`;
+        
+        // フォーカス表示だけ先に移動しておく
+        document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
+        const targetRow = document.getElementById(`row-${cellNum}`);
+        if (targetRow) {
+          targetRow.classList.add('active-row');
+          targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        // 5秒間数値が来なかったらクリア
+        clearTimeout(pendingTimer);
+        pendingTimer = setTimeout(() => {
+          clearPendingCell();
+        }, 5000);
+      } else {
+        pendingInfo.textContent = '';
+      }
+    }
+
+    function clearPendingCell() {
+      pendingCellNum = null;
+      document.getElementById('pending-info').textContent = '';
+      clearTimeout(pendingTimer);
+    }
 
     // 1. テーブル生成
     const tbody = document.getElementById('cell-table-body');
@@ -118,12 +156,10 @@
 
       const lastState = historyStack.pop();
       
-      // 値を直前の状態へ復元
       for (const inputId in lastState.values) {
         document.getElementById(inputId).value = lastState.values[inputId];
       }
 
-      // アクティブ行を直前の行へ復元
       document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
       if (lastState.activeCellNum) {
         const targetRow = document.getElementById(`row-${lastState.activeCellNum}`);
@@ -132,6 +168,7 @@
           targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }
+      clearPendingCell();
     }
 
     document.getElementById('undo-btn').addEventListener('click', undoLastAction);
@@ -182,7 +219,6 @@
       const lastSpeech = document.getElementById('last-speech');
       let isListening = false;
 
-      // 音声入力を停止する共通関数
       function stopListening() {
         isListening = false;
         recognition.stop();
@@ -190,9 +226,9 @@
         status.style.color = "#555";
         startBtn.textContent = "🎤 音声入力 開始";
         startBtn.classList.remove('listening');
+        clearPendingCell();
       }
 
-      // 音声入力を開始する共通関数
       function startListening() {
         try {
           recognition.start();
@@ -220,19 +256,18 @@
         
         lastSpeech.textContent = rawText;
 
-        // 【音声コマンド1】入力終了（停止）の判定
+        // 【音声コマンド1】入力終了（停止）
         if (rawText.match(/終了|しゅうりょう|停止|ていし|おわり|終わり/)) {
           stopListening();
-          console.log("音声入力を終了しました");
           return;
         }
 
-        // 【音声コマンド2】モード切替の判定
+        // 【音声コマンド2】モード切替
         if (rawText.match(/比重|ひじゅう/)) {
           const hasCellNumber = normalizeJapaneseNumbers(rawText).match(/(?:セル|セルナンバー|ナンバー|No|no)?\s*(\d{1,2})\s*(?:番|セル)?/);
           if (!hasCellNumber || rawText.match(/モード|測り|はかり/)) {
             setMode('sg');
-            console.log("比重モードに切替");
+            clearPendingCell();
             return;
           }
         }
@@ -240,7 +275,7 @@
           const hasCellNumber = normalizeJapaneseNumbers(rawText).match(/(?:セル|セルナンバー|ナンバー|No|no)?\s*(\d{1,2})\s*(?:番|セル)?/);
           if (!hasCellNumber || rawText.match(/モード|測り|はかり/)) {
             setMode('v');
-            console.log("電圧モードに切替");
+            clearPendingCell();
             return;
           }
         }
@@ -254,81 +289,98 @@
         const normalized = normalizeJapaneseNumbers(rawText);
         console.log("変換後:", normalized);
 
-        // セル番号パターン（「1番」「セル1」「No1」など）をチェック
+        // 抽出処理
         const cellMatch = normalized.match(/(?:セル|セルナンバー|ナンバー|No|no)?\s*(\d{1,2})\s*(?:番|セル)?/);
-
-        // 「1番〜24番」のセル番号が検出されない発声は無視
-        if (!cellMatch) {
-          console.log("セル番号が含まれていないため無視します:", rawText);
-          return;
-        }
-
-        const cellNum = parseInt(cellMatch[1], 10);
-        
-        if (cellNum < 1 || cellNum > 24) {
-          console.log("範囲外のセル番号のため無視します:", cellNum);
-          return;
-        }
-
-        const currentMode = document.querySelector('input[name="input-target"]:checked').value;
         const numberMatches = normalized.match(/\d(?:\.\d+)?/g);
 
+        let cellNum = null;
+
+        if (cellMatch) {
+          const parsed = parseInt(cellMatch[1], 10);
+          if (parsed >= 1 && parsed <= 24) {
+            cellNum = parsed;
+          }
+        }
+
+        // セル番号が直接指定されず、保留中のセル番号がある場合
+        if (!cellNum && pendingCellNum) {
+          cellNum = pendingCellNum;
+        }
+
+        // セル番号が全く特定できない場合は無視
+        if (!cellNum) {
+          console.log("セル番号が特定できないため無視:", rawText);
+          return;
+        }
+
+        // 数値の抽出
         let val = null;
         if (numberMatches) {
           for (let numStr of numberMatches) {
-            if (parseFloat(numStr) !== cellNum || numberMatches.length === 1) {
+            // セル番号と異なる数値、または数値単体を値として採用
+            if (parseFloat(numStr) !== cellNum || (pendingCellNum && numberMatches.length === 1)) {
               val = numStr;
+              break;
             }
           }
-          if (!val && numberMatches.length > 1) {
+          if (!val && numberMatches.length > 1 && !pendingCellNum) {
             val = numberMatches[1];
           }
         }
 
-        // 現在選択されている行（復元用）を取得
-        const activeRow = document.querySelector('tr.active-row');
-        const prevActiveCellNum = activeRow ? parseInt(activeRow.id.replace('row-', ''), 10) : null;
-
-        // 変更前の状態を履歴（スタック）へ記録
-        const previousState = {
-          activeCellNum: prevActiveCellNum,
-          values: {
-            [`sg-${cellNum}`]: document.getElementById(`sg-${cellNum}`).value,
-            [`v-${cellNum}`]: document.getElementById(`v-${cellNum}`).value
-          }
-        };
-
-        // 値の更新処理
-        let updated = false;
-
-        if (currentMode === 'sg' && val) {
-          document.getElementById(`sg-${cellNum}`).value = val;
-          updated = true;
-        } else if (currentMode === 'v' && val) {
-          document.getElementById(`v-${cellNum}`).value = val;
-          updated = true;
-        } else if (currentMode === 'both') {
-          const sgMatch = normalized.match(/(?:比重|ひじゅう)\s*(\d(?:\.\d+)?)/);
-          const vMatch = normalized.match(/(?:電圧|でんあつ)\s*(\d(?:\.\d+)?)/);
-          if (sgMatch) {
-            document.getElementById(`sg-${cellNum}`).value = sgMatch[1];
-            updated = true;
-          }
-          if (vMatch) {
-            document.getElementById(`v-${cellNum}`).value = vMatch[1];
-            updated = true;
-          }
+        // 【判定】セル番号のみ発声され、数値がまだない場合は「保留」にする
+        if (cellMatch && !val) {
+          console.log(`Cell ${cellNum} のみ認識。数値を待機します...`);
+          setPendingCell(cellNum);
+          return;
         }
 
-        // 値が更新された場合のみ、履歴を追加してハイライトを移動
-        if (updated) {
-          historyStack.push(previousState);
+        // 数値が存在する場合は入力実行
+        if (val) {
+          const currentMode = document.querySelector('input[name="input-target"]:checked').value;
 
-          document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
-          const targetRow = document.getElementById(`row-${cellNum}`);
-          if (targetRow) {
-            targetRow.classList.add('active-row');
-            targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          const activeRow = document.querySelector('tr.active-row');
+          const prevActiveCellNum = activeRow ? parseInt(activeRow.id.replace('row-', ''), 10) : null;
+
+          const previousState = {
+            activeCellNum: prevActiveCellNum,
+            values: {
+              [`sg-${cellNum}`]: document.getElementById(`sg-${cellNum}`).value,
+              [`v-${cellNum}`]: document.getElementById(`v-${cellNum}`).value
+            }
+          };
+
+          let updated = false;
+
+          if (currentMode === 'sg') {
+            document.getElementById(`sg-${cellNum}`).value = val;
+            updated = true;
+          } else if (currentMode === 'v') {
+            document.getElementById(`v-${cellNum}`).value = val;
+            updated = true;
+          } else if (currentMode === 'both') {
+            const sgMatch = normalized.match(/(?:比重|ひじゅう)\s*(\d(?:\.\d+)?)/);
+            const vMatch = normalized.match(/(?:電圧|でんあつ)\s*(\d(?:\.\d+)?)/);
+            if (sgMatch) {
+              document.getElementById(`sg-${cellNum}`).value = sgMatch[1];
+              updated = true;
+            }
+            if (vMatch) {
+              document.getElementById(`v-${cellNum}`).value = vMatch[1];
+              updated = true;
+            }
+          }
+
+          if (updated) {
+            historyStack.push(previousState);
+            clearPendingCell(); // 入力完了のため保留解除
+
+            document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
+            const targetRow = document.getElementById(`row-${cellNum}`);
+            if (targetRow) {
+              targetRow.classList.add('active-row');
+              targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
           }
         }
       };
@@ -340,7 +392,6 @@
       };
 
       recognition.onend = () => {
-        // 意図的に停止させた場合以外（Web Speech APIの仕様上の自動切断）は自動再起動
         if (isListening) {
           try {
             recognition.start();
