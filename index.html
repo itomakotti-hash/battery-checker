@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（まとめ入力モード対応）</title>
+  <title>バッテリーセル記録（セル番号必須モード）</title>
   <style>
     body { font-family: sans-serif; padding: 15px; max-width: 800px; margin: 0 auto; }
     .controls { 
@@ -38,7 +38,7 @@
 
     #status { font-weight: bold; color: #555; }
     .recognized-text { width: 100%; font-size: 0.95rem; background: #f9f9f9; padding: 8px; border: 1px solid #ddd; border-radius: 4px; color: #333; }
-    .hint { width: 100%; color: #666; font-size: 0.85rem; }
+    .hint { width: 100%; color: #d9534f; font-size: 0.85rem; font-weight: bold; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
     th { background: #f0f0f0; }
@@ -55,7 +55,7 @@
     <button id="export-btn">📊 Excel用CSV出力</button>
     <span id="status">停止中</span>
 
-    <!-- 入力対象を選択するラジオボタン -->
+    <!-- 入力対象モード -->
     <div class="mode-selector">
       <span>現在の入力対象:</span>
       <label><input type="radio" name="input-target" value="sg" checked> 🧪 比重モード</label>
@@ -65,7 +65,7 @@
     
     <div class="recognized-text">認識結果: <span id="last-speech" style="font-weight:bold; color:#1a0dab;">-</span></div>
     <div class="hint" id="mode-hint">
-      💡 <b>比重モードの言い方例：</b>「1番 1 点 2 8」「2番 1 点 2 5」（「比重」と言う必要はありません）
+      ⚠️ 必ず「1番」「2番」などセル番号から発声してください。（例：「1番 1点28」）
     </div>
   </div>
 
@@ -95,22 +95,6 @@
       `;
       tbody.appendChild(tr);
     }
-
-    // モード切替時のヒント表示変更
-    const radios = document.querySelectorAll('input[name="input-target"]');
-    const modeHint = document.getElementById('mode-hint');
-    radios.forEach(r => {
-      r.addEventListener('change', (e) => {
-        const val = e.target.value;
-        if (val === 'sg') {
-          modeHint.innerHTML = '💡 <b>比重モードの言い方例：</b>「1番 1 点 2 8」「2番 1 点 2 5」';
-        } else if (val === 'v') {
-          modeHint.innerHTML = '💡 <b>電圧モードの言い方例：</b>「1番 2 点 1 5」「2番 2 点 1 8」';
-        } else {
-          modeHint.innerHTML = '💡 <b>両方モードの言い方例：</b>「1番 比重 1 点 2 8 電圧 2 点 1 5」';
-        }
-      });
-    });
 
     // 日本語の数値・漢数字表記を全角半角数値に統一する変換関数
     function normalizeJapaneseNumbers(text) {
@@ -189,53 +173,55 @@
         const normalized = normalizeJapaneseNumbers(rawText);
         console.log("変換後:", normalized);
 
-        // 1. セル番号の抽出（「1番」「セル2」など）
+        // セル番号パターン（「1番」「セル1」「No1」など）をチェック
         const cellMatch = normalized.match(/(?:セル|セルナンバー|ナンバー|No|no)?\s*(\d{1,2})\s*(?:番|セル)?/);
+
+        // 【安全ガード】「1番〜24番」のセル番号が検出されない発声はすべて無視して処理終了
+        if (!cellMatch) {
+          console.log("セル番号が含まれていないため無視します:", rawText);
+          return;
+        }
+
+        const cellNum = parseInt(cellMatch[1], 10);
         
-        // 2. 数値の抽出（小数点のついた数値、あるいは数値全般）
+        // セル番号が 1〜24 の範囲外の場合も無視
+        if (cellNum < 1 || cellNum > 24) {
+          console.log("範囲外のセル番号のため無視します:", cellNum);
+          return;
+        }
+
+        // --- セル番号（1〜24）が含まれている場合のみ、以下の入力処理を実行 ---
+        document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
+        const targetRow = document.getElementById(`row-${cellNum}`);
+        if (targetRow) {
+          targetRow.classList.add('active-row');
+          targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        const currentMode = document.querySelector('input[name="input-target"]:checked').value;
         const numberMatches = normalized.match(/\d(?:\.\d+)?/g);
 
-        if (cellMatch) {
-          const cellNum = parseInt(cellMatch[1], 10);
-          
-          if (cellNum >= 1 && cellNum <= 24) {
-            document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
-            const targetRow = document.getElementById(`row-${cellNum}`);
-            if (targetRow) {
-              targetRow.classList.add('active-row');
-              targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-
-            // 現在選択されているモードを取得
-            const currentMode = document.querySelector('input[name="input-target"]:checked').value;
-
-            // セル番号以外の数値を取り出す
-            let val = null;
-            if (numberMatches) {
-              // セル番号と一致しない最初の数値を値として採用
-              for (let numStr of numberMatches) {
-                if (parseFloat(numStr) !== cellNum || numberMatches.length === 1) {
-                  val = numStr;
-                }
-              }
-              if (!val && numberMatches.length > 1) {
-                val = numberMatches[1];
-              }
-            }
-
-            // モードに応じた自動割り当て
-            if (currentMode === 'sg' && val) {
-              document.getElementById(`sg-${cellNum}`).value = val;
-            } else if (currentMode === 'v' && val) {
-              document.getElementById(`v-${cellNum}`).value = val;
-            } else if (currentMode === 'both') {
-              // 両方モード：明示的な判定
-              const sgMatch = normalized.match(/(?:比重|ひじゅう)\s*(\d(?:\.\d+)?)/);
-              const vMatch = normalized.match(/(?:電圧|でんあつ)\s*(\d(?:\.\d+)?)/);
-              if (sgMatch) document.getElementById(`sg-${cellNum}`).value = sgMatch[1];
-              if (vMatch) document.getElementById(`v-${cellNum}`).value = vMatch[1];
+        let val = null;
+        if (numberMatches) {
+          for (let numStr of numberMatches) {
+            if (parseFloat(numStr) !== cellNum || numberMatches.length === 1) {
+              val = numStr;
             }
           }
+          if (!val && numberMatches.length > 1) {
+            val = numberMatches[1];
+          }
+        }
+
+        if (currentMode === 'sg' && val) {
+          document.getElementById(`sg-${cellNum}`).value = val;
+        } else if (currentMode === 'v' && val) {
+          document.getElementById(`v-${cellNum}`).value = val;
+        } else if (currentMode === 'both') {
+          const sgMatch = normalized.match(/(?:比重|ひじゅう)\s*(\d(?:\.\d+)?)/);
+          const vMatch = normalized.match(/(?:電圧|でんあつ)\s*(\d(?:\.\d+)?)/);
+          if (sgMatch) document.getElementById(`sg-${cellNum}`).value = sgMatch[1];
+          if (vMatch) document.getElementById(`v-${cellNum}`).value = vMatch[1];
         }
       };
 
