@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（Excel罫線・カラー装飾出力対応版）</title>
+  <title>バッテリーセル記録（縦表示・Excel装飾出力対応版）</title>
   <!-- Excelファイル（.xlsx）生成・装飾用ライブラリ -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 15px; max-width: 1200px; margin: 0 auto; background-color: #f8f9fa; }
-    h1 { text-align: center; font-size: 1.5rem; margin-bottom: 15px; }
+    body { font-family: sans-serif; padding: 15px; max-width: 600px; margin: 0 auto; background-color: #f8f9fa; }
+    h1 { text-align: center; font-size: 1.4rem; margin-bottom: 15px; }
     
     .controls { 
       margin-bottom: 15px; 
@@ -67,64 +67,46 @@
     .recognized-text { width: 100%; font-size: 0.9rem; background: #fff; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; color: #333; }
     .pending-status { color: #d9534f; font-weight: bold; margin-left: 10px; }
 
-    /* 横並びテーブル用スタイル */
+    /* 縦表示テーブル用スタイル */
     .table-container {
-      overflow-x: auto;
       background: #fff;
       border-radius: 8px;
       padding: 10px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.05);
       margin-bottom: 15px;
     }
-    .grid-table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 900px;
-    }
-    .grid-table th, .grid-table td {
-      border: 1px solid #ccc;
-      text-align: center;
-      padding: 4px;
-      font-size: 0.85rem;
-    }
-    .grid-table th { background: #f0f0f0; }
-    .row-header { background: #e9ecef; font-weight: bold; width: 80px; }
-    .cell-header { background: #17a2b8; color: white; font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; text-align: center; padding: 8px 4px; font-size: 0.95rem; }
+    th { background: #f0f0f0; }
     
-    .cell-box {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-      padding: 2px;
-    }
-    .cell-box input {
+    input[type="number"] {
       width: 90%;
-      padding: 4px 2px;
-      text-align: right;
-      font-size: 0.9rem;
+      padding: 6px;
+      font-size: 1rem;
       border: 1px solid #ccc;
-      border-radius: 3px;
+      border-radius: 4px;
+      text-align: right;
     }
 
     .badge {
-      font-size: 0.65rem;
-      padding: 1px 4px;
+      font-size: 0.75rem;
+      padding: 2px 6px;
       border-radius: 3px;
       font-weight: bold;
       color: white;
+      margin-left: 5px;
       white-space: nowrap;
     }
     .badge-max { background-color: #e53935; }
     .badge-min { background-color: #1e88e5; }
 
-    .active-cell { background-color: #e6f7ff !important; border: 2px solid #1890ff !important; }
-    .pending-cell { background-color: #fffbe6 !important; border: 2px dashed #ffc107 !important; }
+    .active-row { background-color: #e6f7ff !important; }
+    .pending-row { background-color: #fffbe6 !important; }
   </style>
 </head>
 <body>
 
-  <h1>バッテリーセル測定記録（Excel出力対応）</h1>
+  <h1>バッテリーセル記録（縦表示）</h1>
 
   <div class="controls">
     <button id="start-btn">🎤 音声入力 開始</button>
@@ -152,94 +134,38 @@
     </div>
   </div>
 
-  <!-- 上段：セル 1～12 -->
+  <!-- 縦並びテーブル -->
   <div class="table-container">
-    <table class="grid-table">
+    <table>
       <thead>
         <tr>
-          <th class="row-header">セル No.</th>
-          <script>
-            for(let i=1; i<=12; i++) document.write(`<th class="cell-header">${i}</th>`);
-          </script>
+          <th style="width: 20%;">セル No.</th>
+          <th style="width: 40%;">比重 (S.G.)</th>
+          <th style="width: 40%;">電圧 (V)</th>
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td class="row-header">比重 (S.G.)</td>
-          <script>
-            for(let i=1; i<=12; i++) {
-              document.write(`
-                <td id="td-sg-${i}">
-                  <div class="cell-box">
+        <script>
+          for (let i = 1; i <= 24; i++) {
+            document.write(`
+              <tr id="tr-${i}">
+                <td style="font-weight:bold; background:#f9f9f9;">${i}</td>
+                <td>
+                  <div style="display:flex; align-items:center; justify-content:center;">
                     <input type="number" step="0.001" id="sg-${i}" placeholder="1.280" oninput="updateMinMaxHighlights()">
                     <span id="badge-sg-${i}"></span>
                   </div>
                 </td>
-              `);
-            }
-          </script>
-        </tr>
-        <tr>
-          <td class="row-header">電圧 (V)</td>
-          <script>
-            for(let i=1; i<=12; i++) {
-              document.write(`
-                <td id="td-v-${i}">
-                  <div class="cell-box">
+                <td>
+                  <div style="display:flex; align-items:center; justify-content:center;">
                     <input type="number" step="0.01" id="v-${i}" placeholder="2.15" oninput="updateMinMaxHighlights()">
                     <span id="badge-v-${i}"></span>
                   </div>
                 </td>
-              `);
-            }
-          </script>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- 下段：セル 13～24 -->
-  <div class="table-container">
-    <table class="grid-table">
-      <thead>
-        <tr>
-          <th class="row-header">セル No.</th>
-          <script>
-            for(let i=13; i<=24; i++) document.write(`<th class="cell-header" style="background:#0984e3;">${i}</th>`);
-          </script>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td class="row-header">比重 (S.G.)</td>
-          <script>
-            for(let i=13; i<=24; i++) {
-              document.write(`
-                <td id="td-sg-${i}">
-                  <div class="cell-box">
-                    <input type="number" step="0.001" id="sg-${i}" placeholder="1.280" oninput="updateMinMaxHighlights()">
-                    <span id="badge-sg-${i}"></span>
-                  </div>
-                </td>
-              `);
-            }
-          </script>
-        </tr>
-        <tr>
-          <td class="row-header">電圧 (V)</td>
-          <script>
-            for(let i=13; i<=24; i++) {
-              document.write(`
-                <td id="td-v-${i}">
-                  <div class="cell-box">
-                    <input type="number" step="0.01" id="v-${i}" placeholder="2.15" oninput="updateMinMaxHighlights()">
-                    <span id="badge-v-${i}"></span>
-                  </div>
-                </td>
-              `);
-            }
-          </script>
-        </tr>
+              </tr>
+            `);
+          }
+        </script>
       </tbody>
     </table>
   </div>
@@ -335,10 +261,8 @@
       
       if (cellNum) {
         pendingInfo.textContent = `⏳ ${cellNum}番 の数値入力待ち...`;
-        const targetTdSg = document.getElementById(`td-sg-${cellNum}`);
-        const targetTdV = document.getElementById(`td-v-${cellNum}`);
-        if (targetTdSg) targetTdSg.classList.add('pending-cell');
-        if (targetTdV) targetTdV.classList.add('pending-cell');
+        const targetTr = document.getElementById(`tr-${cellNum}`);
+        if (targetTr) targetTr.classList.add('pending-row');
 
         clearTimeout(pendingTimer);
         pendingTimer = setTimeout(() => {
@@ -348,8 +272,8 @@
     }
 
     function clearPendingCellUI() {
-      document.querySelectorAll('td').forEach(td => {
-        td.classList.remove('pending-cell');
+      document.querySelectorAll('tr').forEach(tr => {
+        tr.classList.remove('pending-row');
       });
       document.getElementById('pending-info').textContent = '';
     }
@@ -384,13 +308,11 @@
         for (const inputId in lastState.values) {
           document.getElementById(inputId).value = lastState.values[inputId];
         }
-        document.querySelectorAll('td').forEach(td => td.classList.remove('active-cell'));
+        document.querySelectorAll('tr').forEach(tr => tr.classList.remove('active-row'));
         if (lastState.activeCellNum) {
           currentAutoCellNum = lastState.activeCellNum;
-          const targetTdSg = document.getElementById(`td-sg-${lastState.activeCellNum}`);
-          const targetTdV = document.getElementById(`td-v-${lastState.activeCellNum}`);
-          if (targetTdSg) targetTdSg.classList.add('active-cell');
-          if (targetTdV) targetTdV.classList.add('active-cell');
+          const targetTr = document.getElementById(`tr-${lastState.activeCellNum}`);
+          if (targetTr) targetTr.classList.add('active-row');
         }
       }
       clearPendingCell();
@@ -604,15 +526,13 @@
           historyStack.push(previousState);
           clearPendingCell();
 
-          document.querySelectorAll('td').forEach(td => {
-            td.classList.remove('active-cell');
-            td.classList.remove('pending-cell');
+          document.querySelectorAll('tr').forEach(tr => {
+            tr.classList.remove('active-row');
+            tr.classList.remove('pending-row');
           });
 
-          const targetTdSg = document.getElementById(`td-sg-${cellNum}`);
-          const targetTdV = document.getElementById(`td-v-${cellNum}`);
-          if (targetTdSg) targetTdSg.classList.add('active-cell');
-          if (targetTdV) targetTdV.classList.add('active-cell');
+          const targetTr = document.getElementById(`tr-${cellNum}`);
+          if (targetTr) targetTr.classList.add('active-row');
 
           updateMinMaxHighlights();
           speak(`${cellNum}番、${val}`);
@@ -638,7 +558,7 @@
       alert("お使いのブラウザは音声認識機能に対応していません。Google Chromeをお試しください。");
     }
 
-    // ★【新機能】装飾（罫線・背景色・フォント色）付きExcelファイル（.xlsx）の出力処理
+    // 装飾付きExcelファイル（.xlsx）の出力処理
     document.getElementById('export-btn').addEventListener('click', () => {
       if (typeof XLSX === 'undefined') {
         alert("Excelライブラリの読み込みに失敗しました。インターネット接続を確認してください。");
@@ -653,7 +573,7 @@
       const vMinStr  = stats.v.min  !== null ? `${stats.v.min} (${stats.v.minCells.map(c=>c+'番').join('&')})`  : "-";
       const vMaxStr  = stats.v.max  !== null ? `${stats.v.max} (${stats.v.maxCells.map(c=>c+'番').join('&')})`  : "-";
 
-      // スタイル定義（共通罫線・色指定）
+      // スタイル定義
       const thinBorder = {
         top: { style: "thin", color: { rgb: "CCCCCC" } },
         bottom: { style: "thin", color: { rgb: "CCCCCC" } },
@@ -712,30 +632,27 @@
       // ワークシートデータ構築
       const wsData = [];
 
-      // ■ 全体情報
+      // 全体情報
       wsData.push([{ v: "■ 全体情報", s: styleTitle }, { v: "", s: styleTitle }]);
       wsData.push([{ v: "全体電圧 (V)", s: styleRowLabel }, { v: totalV, s: styleNormal }]);
       wsData.push([{ v: "比重 最低値 (S.G.)", s: styleRowLabel }, { v: sgMinStr, s: styleMin }]);
       wsData.push([{ v: "比重 最高値 (S.G.)", s: styleRowLabel }, { v: sgMaxStr, s: styleMax }]);
       wsData.push([{ v: "電圧 最低値 (V)", s: styleRowLabel }, { v: vMinStr, s: styleMin }]);
       wsData.push([{ v: "電圧 最高値 (V)", s: styleRowLabel }, { v: vMaxStr, s: styleMax }]);
-      wsData.push([]); // 空行
+      wsData.push([]);
 
       // ブロック作成関数
       const appendBlock = (title, startCell, endCell, headerStyle) => {
-        // タイトル行
         let titleRow = [{ v: `■ ${title}`, s: styleTitle }];
         for (let i = startCell; i <= endCell; i++) titleRow.push({ v: "", s: styleTitle });
         wsData.push(titleRow);
 
-        // セル No.
         let headerRow = [{ v: "セル No.", s: styleRowLabel }];
         for (let i = startCell; i <= endCell; i++) {
           headerRow.push({ v: i, s: headerStyle });
         }
         wsData.push(headerRow);
 
-        // 比重
         let sgRow = [{ v: "比重 (S.G.)", s: styleRowLabel }];
         for (let i = startCell; i <= endCell; i++) {
           const rawVal = document.getElementById(`sg-${i}`).value;
@@ -749,7 +666,6 @@
         }
         wsData.push(sgRow);
 
-        // 電圧
         let vRow = [{ v: "電圧 (V)", s: styleRowLabel }];
         for (let i = startCell; i <= endCell; i++) {
           const rawVal = document.getElementById(`v-${i}`).value;
@@ -763,7 +679,7 @@
         }
         wsData.push(vRow);
 
-        wsData.push([]); // 空行
+        wsData.push([]);
       };
 
       appendBlock("1〜12番", 1, 12, styleHeader);
@@ -773,14 +689,12 @@
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-      // 列幅の自動設定
-      const cols = [{ wch: 18 }]; // 1列目（ラベル部）
-      for (let i = 1; i <= 12; i++) cols.push({ wch: 10 }); // 2〜13列目（各セル値）
+      const cols = [{ wch: 18 }];
+      for (let i = 1; i <= 12; i++) cols.push({ wch: 10 });
       ws['!cols'] = cols;
 
       XLSX.utils.book_append_sheet(wb, ws, "バッテリー測定結果");
 
-      // ファイル保存名
       const now = new Date();
       const timestamp = now.getFullYear() +
         String(now.getMonth() + 1).padStart(2, '0') +
