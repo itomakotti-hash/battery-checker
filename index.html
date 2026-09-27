@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（高精度音声認識対応）</title>
+  <title>バッテリーセル記録（音声読み上げ応答対応）</title>
   <style>
     body { font-family: sans-serif; padding: 15px; max-width: 800px; margin: 0 auto; }
     .controls { 
@@ -46,7 +46,6 @@
     th { background: #f0f0f0; }
     input { width: 80%; padding: 6px; text-align: right; font-size: 1rem; }
     
-    /* 選択中の行・待機中の行の装飾 */
     .active-row { background-color: #e6f7ff; }
     .pending-row { background-color: #fffbe6; outline: 2px dashed #ffc107; }
   </style>
@@ -73,7 +72,7 @@
       <span id="pending-info" class="pending-status"></span>
     </div>
     <div class="hint">
-      💡 <b>使い方：</b>「1番 1点280」と一気に言っても、「1番」（間）「1点280」と分かれても認識します。
+      🔊 <b>音声フィードバック：</b>入力された数値やモードの切り替えを音声で読み上げます。
     </div>
   </div>
 
@@ -94,6 +93,17 @@
     const historyStack = [];
     let pendingCellNum = null;
     let pendingTimer = null;
+
+    // 【音声合成】読み上げ処理関数
+    function speak(text) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel(); // 前の読み上げがあれば中断
+        const uttr = new SpeechSynthesisUtterance(text);
+        uttr.lang = 'ja-JP';
+        uttr.rate = 1.2; // 少し早めのテンポでスムーズに
+        window.speechSynthesis.speak(uttr);
+      }
+    }
 
     // テーブル生成
     const tbody = document.getElementById('cell-table-body');
@@ -140,14 +150,20 @@
       clearTimeout(pendingTimer);
     }
 
-    function setMode(modeValue) {
+    function setMode(modeValue, shouldSpeak = true) {
       const targetRadio = document.querySelector(`input[name="input-target"][value="${modeValue}"]`);
-      if (targetRadio) targetRadio.checked = true;
+      if (targetRadio) {
+        targetRadio.checked = true;
+        if (shouldSpeak) {
+          const modeName = modeValue === 'sg' ? '比重' : modeValue === 'v' ? '電圧' : '両方';
+          speak(`${modeName}モードに変更しました`);
+        }
+      }
     }
 
     function undoLastAction() {
       if (historyStack.length === 0) {
-        alert("戻せる操作履歴がありません。");
+        speak("戻せる操作がありません");
         return;
       }
       const lastState = historyStack.pop();
@@ -163,18 +179,15 @@
         }
       }
       clearPendingCell();
+      speak("1つ戻しました");
     }
 
     document.getElementById('undo-btn').addEventListener('click', undoLastAction);
 
-    // 高度な日本語テキスト・数値正規化関数
+    // テキスト正規化
     function normalizeSpeechText(text) {
       let t = text;
-
-      // 小数点の表記揺れを統一
       t = t.replace(/点|てん|テン|一転|回転/g, '.');
-
-      // よくある音声誤認識の置き換え
       t = t.replace(/イチ/g, '1').replace(/ニ/g, '2').replace(/サン/g, '3')
            .replace(/ヨン/g, '4').replace(/ゴ/g, '5').replace(/ロク/g, '6')
            .replace(/ナナ/g, '7').replace(/ハチ/g, '8').replace(/キュウ/g, '9');
@@ -186,22 +199,16 @@
         'なな':7, 'しち':7, '七':7, 'はち':8, '八':8, 'きゅう':9, 'く':9, '九':9
       };
 
-      // 10〜24の漢数字展開
       t = t.replace(/二十([一二三四1234])/g, (_, p1) => 20 + (kanjiMap[p1] || parseInt(p1)));
       t = t.replace(/二十/g, '20');
       t = t.replace(/十([一二三四五六七八九123456789])/g, (_, p1) => 10 + (kanjiMap[p1] || parseInt(p1)));
       t = t.replace(/十/g, '10');
-
-      // 全角数字を半角数字に変換
       t = t.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
 
       for (let k in kanjiMap) {
         t = t.split(k).join(kanjiMap[k]);
       }
-
-      // 「1. 28」のようにドットの後にスペースが入るのを修正
       t = t.replace(/(\d+)\s*\.\s*(\d+)/g, '$1.$2');
-
       return t;
     }
 
@@ -227,6 +234,7 @@
         startBtn.textContent = "🎤 音声入力 開始";
         startBtn.classList.remove('listening');
         clearPendingCell();
+        speak("音声入力を終了します");
       }
 
       function startListening() {
@@ -237,6 +245,7 @@
           startBtn.textContent = "⏹️ 音声入力 停止";
           startBtn.classList.add('listening');
           isListening = true;
+          speak("音声入力を開始します");
         } catch (e) {
           console.error("開始エラー:", e);
         }
@@ -282,13 +291,12 @@
         }
         if (rawText.match(/クリア|消す|消去/)) {
           clearPendingCell();
+          speak("選択を解除しました");
           return;
         }
 
         const normalized = normalizeSpeechText(rawText);
-        console.log("正規化テキスト:", normalized);
 
-        // セル番号の抽出（「1番」「セル1」「1」など）
         const cellMatch = normalized.match(/(?:セル|セルナンバー|ナンバー|No|no)?\s*(\d{1,2})\s*(?:番|セル)?/);
         
         let detectedCellNum = null;
@@ -299,14 +307,10 @@
           }
         }
 
-        // 数値（小数含む）の抽出
         const numbers = normalized.match(/\d+(?:\.\d+)?/g) || [];
 
-        // --- パターン判定 ---
-        
-        // 1. 新しいセル番号が明示的に言われた場合
+        // 判定1: セル番号指定あり
         if (detectedCellNum) {
-          // 番号以外の数値があるか探す
           let valueStr = null;
           for (let n of numbers) {
             if (parseFloat(n) !== detectedCellNum) {
@@ -315,23 +319,21 @@
             }
           }
 
-          // 番号と数値がセットで発声された場合（例：「1番 1.28」）
           if (valueStr !== null) {
             applyValueToCell(detectedCellNum, valueStr);
           } else {
-            // 番号のみ発声された場合（待機状態へ移行）
             setPendingCell(detectedCellNum);
+            speak(`${detectedCellNum}番`);
           }
           return;
         }
 
-        // 2. セル番号はなく、保留（待機）中のセルがあり、数値のみ届いた場合
+        // 判定2: 保留セルがあり数値指定あり
         if (pendingCellNum && numbers.length > 0) {
           applyValueToCell(pendingCellNum, numbers[0]);
         }
       };
 
-      // セルに値を入力する共通内部関数
       function applyValueToCell(cellNum, val) {
         const currentMode = document.querySelector('input[name="input-target"]:checked').value;
         const activeRow = document.querySelector('tr.active-row');
@@ -354,7 +356,6 @@
           document.getElementById(`v-${cellNum}`).value = val;
           updated = true;
         } else if (currentMode === 'both') {
-          // 両方モード時の割り当て
           if (val > 1.0 && val < 2.0) {
             document.getElementById(`sg-${cellNum}`).value = val;
             updated = true;
@@ -378,6 +379,9 @@
             targetRow.classList.add('active-row');
             targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
+
+          // ★読み上げ応答（例: 「1番、1.28」）
+          speak(`${cellNum}番、${val}`);
         }
       }
 
@@ -396,7 +400,7 @@
       alert("お使いのブラウザは音声認識機能に対応していません。Google Chromeをお試しください。");
     }
 
-    // CSV出力機能
+    // CSV出力
     document.getElementById('export-btn').addEventListener('click', () => {
       let csvContent = "セル No.,比重 (S.G.),電圧 (V)\n";
       for (let i = 1; i <= 24; i++) {
@@ -420,6 +424,7 @@
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      speak("CSVファイルをダウンロードしました");
     });
   </script>
 </body>
