@@ -3,23 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（最高・最低値マーク＆集計機能付き）</title>
+  <title>バッテリーセル記録（2段・12列レイアウト）</title>
   <style>
-    body { font-family: sans-serif; padding: 15px; max-width: 800px; margin: 0 auto; }
+    body { font-family: sans-serif; padding: 15px; max-width: 1200px; margin: 0 auto; background-color: #f8f9fa; }
+    h1 { text-align: center; font-size: 1.5rem; margin-bottom: 15px; }
+    
     .controls { 
       margin-bottom: 15px; 
       position: sticky; 
       top: 0; 
       background: #fff; 
-      padding: 10px 0; 
-      border-bottom: 2px solid #ddd;
+      padding: 12px; 
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       align-items: center;
       z-index: 10;
     }
-    button { font-size: 1rem; padding: 10px 16px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; }
+    button { font-size: 0.95rem; padding: 8px 14px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; }
     #start-btn { background-color: #4CAF50; color: white; border: none; }
     #start-btn.listening { background-color: #f44336; }
     #undo-btn { background-color: #ff9800; color: white; border: none; }
@@ -28,7 +31,7 @@
     .total-v-container {
       width: 100%;
       background: #fff3cd;
-      padding: 10px;
+      padding: 8px 12px;
       border-radius: 6px;
       border: 1px solid #ffeeba;
       display: flex;
@@ -38,9 +41,9 @@
       color: #856404;
     }
     .total-v-container input {
-      width: 120px;
-      padding: 6px;
-      font-size: 1.1rem;
+      width: 100px;
+      padding: 4px;
+      font-size: 1rem;
       text-align: right;
       font-weight: bold;
     }
@@ -48,7 +51,7 @@
     .mode-selector {
       width: 100%;
       background: #eef6ff;
-      padding: 10px;
+      padding: 8px 12px;
       border-radius: 6px;
       border: 1px solid #b6d4fe;
       display: flex;
@@ -59,34 +62,67 @@
     .mode-selector label { cursor: pointer; }
 
     #status { font-weight: bold; color: #555; }
-    .recognized-text { width: 100%; font-size: 0.95rem; background: #f9f9f9; padding: 8px; border: 1px solid #ddd; border-radius: 4px; color: #333; }
+    .recognized-text { width: 100%; font-size: 0.9rem; background: #fff; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; color: #333; }
     .pending-status { color: #d9534f; font-weight: bold; margin-left: 10px; }
-    .hint { width: 100%; color: #555; font-size: 0.85rem; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; position: relative; }
-    th { background: #f0f0f0; }
-    .input-wrapper { display: flex; align-items: center; justify-content: center; gap: 5px; }
-    input { width: 70%; padding: 6px; text-align: right; font-size: 1rem; }
+
+    /* 横並びテーブル用スタイル */
+    .table-container {
+      overflow-x: auto;
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      margin-bottom: 15px;
+    }
+    .grid-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 900px;
+    }
+    .grid-table th, .grid-table td {
+      border: 1px solid #ccc;
+      text-align: center;
+      padding: 4px;
+      font-size: 0.85rem;
+    }
+    .grid-table th { background: #f0f0f0; }
+    .row-header { background: #e9ecef; font-weight: bold; width: 70px; }
+    .cell-header { background: #17a2b8; color: white; font-weight: bold; }
     
-    /* マーク（バッチ）用スタイル */
+    .cell-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 2px;
+    }
+    .cell-box input {
+      width: 90%;
+      padding: 4px 2px;
+      text-align: right;
+      font-size: 0.9rem;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+    }
+
     .badge {
-      font-size: 0.75rem;
-      padding: 2px 6px;
-      border-radius: 4px;
+      font-size: 0.65rem;
+      padding: 1px 4px;
+      border-radius: 3px;
       font-weight: bold;
       color: white;
       white-space: nowrap;
     }
-    .badge-max { background-color: #e53935; } /* 赤：最高値 */
-    .badge-min { background-color: #1e88e5; } /* 青：最低値 */
+    .badge-max { background-color: #e53935; }
+    .badge-min { background-color: #1e88e5; }
 
-    .active-row { background-color: #e6f7ff; }
-    .pending-row { background-color: #fffbe6; outline: 2px dashed #ffc107; }
+    .active-cell { background-color: #e6f7ff !important; border: 2px solid #1890ff !important; }
+    .pending-cell { background-color: #fffbe6 !important; border: 2px dashed #ffc107 !important; }
   </style>
 </head>
 <body>
 
-  <h1>バッテリーセル測定記録</h1>
+  <h1>バッテリーセル測定記録（1-12 / 13-24）</h1>
 
   <div class="controls">
     <button id="start-btn">🎤 音声入力 開始</button>
@@ -94,16 +130,15 @@
     <button id="export-btn">📊 Excel用CSV出力</button>
     <span id="status">停止中</span>
 
-    <!-- 全体電圧の入力エリア -->
     <div class="total-v-container">
       <label for="total-voltage">⚡ 全体電圧 (V):</label>
-      <input type="number" step="0.01" id="total-voltage" placeholder="例: 48.50">
+      <input type="number" step="0.01" id="total-voltage" placeholder="48.50">
       <span>V</span>
-      <span style="font-size:0.85rem; font-weight:normal; color:#666;">（音声例：「トータル 48.5」）</span>
+      <span style="font-size:0.8rem; font-weight:normal; color:#666;">（音声例：「トータル 48.5」）</span>
     </div>
 
     <div class="mode-selector">
-      <span>現在の入力対象:</span>
+      <span>入力対象:</span>
       <label><input type="radio" name="input-target" id="radio-sg" value="sg" checked> 🧪 比重モード</label>
       <label><input type="radio" name="input-target" id="radio-v" value="v"> ⚡ 電圧モード</label>
       <label><input type="radio" name="input-target" id="radio-both" value="both"> 🔄 両方モード</label>
@@ -113,23 +148,105 @@
       認識テキスト: <span id="last-speech" style="font-weight:bold; color:#1a0dab;">-</span>
       <span id="pending-info" class="pending-status"></span>
     </div>
-    <div class="hint">
-      🏷️ <b>自動マーク機能：</b>入力された数値から自動で最高値（<span style="color:#e53935;font-weight:bold;">赤:最高</span>）と最低値（<span style="color:#1e88e5;font-weight:bold;">青:最低</span>）を表示します。
-    </div>
   </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>セル No.</th>
-        <th>比重 (S.G.)</th>
-        <th>電圧 (V)</th>
-      </tr>
-    </thead>
-    <tbody id="cell-table-body">
-      <!-- 24セル生成 -->
-    </tbody>
-  </table>
+  <!-- 上段：セル 1～12 -->
+  <div class="table-container">
+    <table class="grid-table">
+      <thead>
+        <tr>
+          <th class="row-header">セル No.</th>
+          <!-- 1〜12ヘッダー -->
+          <script>
+            for(let i=1; i<=12; i++) document.write(`<th class="cell-header">${i}</th>`);
+          </script>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="row-header">比重 (S.G.)</td>
+          <!-- 1〜12比重 -->
+          <script>
+            for(let i=1; i<=12; i++) {
+              document.write(`
+                <td id="td-sg-${i}">
+                  <div class="cell-box">
+                    <input type="number" step="0.001" id="sg-${i}" placeholder="1.280" oninput="updateMinMaxHighlights()">
+                    <span id="badge-sg-${i}"></span>
+                  </div>
+                </td>
+              `);
+            }
+          </script>
+        </tr>
+        <tr>
+          <td class="row-header">電圧 (V)</td>
+          <!-- 1〜12電圧 -->
+          <script>
+            for(let i=1; i<=12; i++) {
+              document.write(`
+                <td id="td-v-${i}">
+                  <div class="cell-box">
+                    <input type="number" step="0.01" id="v-${i}" placeholder="2.15" oninput="updateMinMaxHighlights()">
+                    <span id="badge-v-${i}"></span>
+                  </div>
+                </td>
+              `);
+            }
+          </script>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 下段：セル 13～24 -->
+  <div class="table-container">
+    <table class="grid-table">
+      <thead>
+        <tr>
+          <th class="row-header">セル No.</th>
+          <!-- 13〜24ヘッダー -->
+          <script>
+            for(let i=13; i<=24; i++) document.write(`<th class="cell-header" style="background:#0984e3;">${i}</th>`);
+          </script>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="row-header">比重 (S.G.)</td>
+          <!-- 13〜24比重 -->
+          <script>
+            for(let i=13; i<=24; i++) {
+              document.write(`
+                <td id="td-sg-${i}">
+                  <div class="cell-box">
+                    <input type="number" step="0.001" id="sg-${i}" placeholder="1.280" oninput="updateMinMaxHighlights()">
+                    <span id="badge-sg-${i}"></span>
+                  </div>
+                </td>
+              `);
+            }
+          </script>
+        </tr>
+        <tr>
+          <td class="row-header">電圧 (V)</td>
+          <!-- 13〜24電圧 -->
+          <script>
+            for(let i=13; i<=24; i++) {
+              document.write(`
+                <td id="td-v-${i}">
+                  <div class="cell-box">
+                    <input type="number" step="0.01" id="v-${i}" placeholder="2.15" oninput="updateMinMaxHighlights()">
+                    <span id="badge-v-${i}"></span>
+                  </div>
+                </td>
+              `);
+            }
+          </script>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
   <script>
     const historyStack = [];
@@ -138,7 +255,6 @@
     let currentAutoCellNum = 1;
     let isSpeaking = false;
 
-    // 読み上げ処理
     function speak(text) {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -155,30 +271,6 @@
       }
     }
 
-    // テーブル生成
-    const tbody = document.getElementById('cell-table-body');
-    for (let i = 1; i <= 24; i++) {
-      const tr = document.createElement('tr');
-      tr.id = `row-${i}`;
-      tr.innerHTML = `
-        <td>Cell ${i}</td>
-        <td>
-          <div class="input-wrapper">
-            <input type="number" step="0.001" id="sg-${i}" placeholder="例: 1.280" oninput="updateMinMaxHighlights()">
-            <span id="badge-sg-${i}"></span>
-          </div>
-        </td>
-        <td>
-          <div class="input-wrapper">
-            <input type="number" step="0.01" id="v-${i}" placeholder="例: 2.15" oninput="updateMinMaxHighlights()">
-            <span id="badge-v-${i}"></span>
-          </div>
-        </td>
-      `;
-      tbody.appendChild(tr);
-    }
-
-    // ★【新機能】画面上の最低値・最高値ハイライト表示更新
     function updateMinMaxHighlights() {
       const stats = calculateMinMax();
 
@@ -191,7 +283,6 @@
         const sgVal = parseFloat(document.getElementById(`sg-${i}`).value);
         const vVal = parseFloat(document.getElementById(`v-${i}`).value);
 
-        // 比重のマーク
         if (!isNaN(sgVal)) {
           if (stats.sg.max !== null && sgVal === stats.sg.max) {
             badgeSg.innerHTML = '<span class="badge badge-max">最高</span>';
@@ -200,7 +291,6 @@
           }
         }
 
-        // 電圧のマーク
         if (!isNaN(vVal)) {
           if (stats.v.max !== null && vVal === stats.v.max) {
             badgeV.innerHTML = '<span class="badge badge-max">最高</span>';
@@ -211,7 +301,6 @@
       }
     }
 
-    // ★【新機能】最小・最大値の計算ロジック
     function calculateMinMax() {
       let sgList = [];
       let vList = [];
@@ -230,7 +319,6 @@
         const min = Math.min(...vals);
         const max = Math.max(...vals);
 
-        // 複数セルが同値の可能性にも対応
         const minCells = list.filter(item => item.val === min).map(item => item.cell);
         const maxCells = list.filter(item => item.val === max).map(item => item.cell);
 
@@ -250,12 +338,11 @@
       const pendingInfo = document.getElementById('pending-info');
       
       if (cellNum) {
-        pendingInfo.textContent = `⏳ Cell ${cellNum} の数値入力待ち...`;
-        const targetRow = document.getElementById(`row-${cellNum}`);
-        if (targetRow) {
-          targetRow.classList.add('pending-row');
-          targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
+        pendingInfo.textContent = `⏳ ${cellNum}番 の数値入力待ち...`;
+        const targetTdSg = document.getElementById(`td-sg-${cellNum}`);
+        const targetTdV = document.getElementById(`td-v-${cellNum}`);
+        if (targetTdSg) targetTdSg.classList.add('pending-cell');
+        if (targetTdV) targetTdV.classList.add('pending-cell');
 
         clearTimeout(pendingTimer);
         pendingTimer = setTimeout(() => {
@@ -265,7 +352,9 @@
     }
 
     function clearPendingCellUI() {
-      document.querySelectorAll('tr').forEach(r => r.classList.remove('pending-row'));
+      document.querySelectorAll('td').forEach(td => {
+        td.classList.remove('pending-cell');
+      });
       document.getElementById('pending-info').textContent = '';
     }
 
@@ -299,14 +388,13 @@
         for (const inputId in lastState.values) {
           document.getElementById(inputId).value = lastState.values[inputId];
         }
-        document.querySelectorAll('tr').forEach(r => r.classList.remove('active-row'));
+        document.querySelectorAll('td').forEach(td => td.classList.remove('active-cell'));
         if (lastState.activeCellNum) {
           currentAutoCellNum = lastState.activeCellNum;
-          const targetRow = document.getElementById(`row-${lastState.activeCellNum}`);
-          if (targetRow) {
-            targetRow.classList.add('active-row');
-            targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
+          const targetTdSg = document.getElementById(`td-sg-${lastState.activeCellNum}`);
+          const targetTdV = document.getElementById(`td-v-${lastState.activeCellNum}`);
+          if (targetTdSg) targetTdSg.classList.add('active-cell');
+          if (targetTdV) targetTdV.classList.add('active-cell');
         }
       }
       clearPendingCell();
@@ -316,7 +404,6 @@
 
     document.getElementById('undo-btn').addEventListener('click', undoLastAction);
 
-    // テキスト補正関数
     function normalizeSpeechText(text) {
       let t = text;
 
@@ -358,7 +445,6 @@
       return null;
     }
 
-    // 音声認識（Web Speech API）
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     
     if (SpeechRecognition) {
@@ -410,7 +496,6 @@
         
         lastSpeech.textContent = rawText;
 
-        // 停止コマンド
         if (rawText.match(/終了|しゅうりょう|停止|ていし|おわり|終わり/)) {
           stopListening();
           return;
@@ -418,7 +503,6 @@
 
         const normalized = normalizeSpeechText(rawText);
 
-        // 全体電圧の判定
         if (rawText.match(/トータル|全体|ぜんたい|合計|ごうけい|総電圧|全電圧/)) {
           const numMatch = normalized.match(/\d+\.\d+|\d+/);
           if (numMatch) {
@@ -432,7 +516,6 @@
           }
         }
 
-        // モード切替
         if (rawText.match(/比重|ひじゅう/)) {
           if (!rawText.match(/\d+/) || rawText.match(/モード|測り/)) {
             setMode('sg');
@@ -448,7 +531,6 @@
           }
         }
 
-        // Undo・クリア
         if (rawText.match(/戻す|もどす|やり直し|キャンセル/)) {
           undoLastAction();
           return;
@@ -462,7 +544,6 @@
         const explicitCellNum = extractExplicitCellNumber(normalized);
         const floatMatches = normalized.match(/\d+\.\d+|\d+/g) || [];
 
-        // 1. 明示的なセル指定があった場合
         if (explicitCellNum !== null) {
           let valueStr = null;
           for (let n of floatMatches) {
@@ -481,13 +562,11 @@
           return;
         }
 
-        // 2. セル保留中（指定済み）で数値が入力された場合
         if (pendingCellNum && floatMatches.length > 0) {
           applyValueToCell(pendingCellNum, floatMatches[0]);
           return;
         }
 
-        // 3. セル指定がないが数値がある場合
         if (floatMatches.length > 0) {
           applyValueToCell(currentAutoCellNum, floatMatches[0]);
         }
@@ -497,12 +576,10 @@
         if (cellNum < 1 || cellNum > 24) return;
 
         const currentMode = document.querySelector('input[name="input-target"]:checked').value;
-        const activeRow = document.querySelector('tr.active-row');
-        const prevActiveCellNum = activeRow ? parseInt(activeRow.id.replace('row-', ''), 10) : null;
 
         const previousState = {
           type: 'cell',
-          activeCellNum: prevActiveCellNum,
+          activeCellNum: currentAutoCellNum,
           values: {
             [`sg-${cellNum}`]: document.getElementById(`sg-${cellNum}`).value,
             [`v-${cellNum}`]: document.getElementById(`v-${cellNum}`).value
@@ -531,18 +608,17 @@
           historyStack.push(previousState);
           clearPendingCell();
 
-          document.querySelectorAll('tr').forEach(r => {
-            r.classList.remove('active-row');
-            r.classList.remove('pending-row');
+          document.querySelectorAll('td').forEach(td => {
+            td.classList.remove('active-cell');
+            td.classList.remove('pending-cell');
           });
 
-          const targetRow = document.getElementById(`row-${cellNum}`);
-          if (targetRow) {
-            targetRow.classList.add('active-row');
-            targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
+          const targetTdSg = document.getElementById(`td-sg-${cellNum}`);
+          const targetTdV = document.getElementById(`td-v-${cellNum}`);
+          if (targetTdSg) targetTdSg.classList.add('active-cell');
+          if (targetTdV) targetTdV.classList.add('active-cell');
 
-          updateMinMaxHighlights(); // ハイライト表示更新
+          updateMinMaxHighlights();
           speak(`${cellNum}番、${val}`);
 
           if (cellNum < 24) {
@@ -566,15 +642,15 @@
       alert("お使いのブラウザは音声認識機能に対応していません。Google Chromeをお試しください。");
     }
 
-    // ★【機能拡張】集計情報（最低値・最高値・マーク）を含むCSV出力
+    // CSV出力
     document.getElementById('export-btn').addEventListener('click', () => {
       const stats = calculateMinMax();
       const totalV = document.getElementById('total-voltage').value || "-";
 
-      const sgMinStr = stats.sg.min !== null ? `${stats.sg.min} (Cell ${stats.sg.minCells.join('&')})` : "-";
-      const sgMaxStr = stats.sg.max !== null ? `${stats.sg.max} (Cell ${stats.sg.maxCells.join('&')})` : "-";
-      const vMinStr  = stats.v.min  !== null ? `${stats.v.min} (Cell ${stats.v.minCells.join('&')})`  : "-";
-      const vMaxStr  = stats.v.max  !== null ? `${stats.v.max} (Cell ${stats.v.maxCells.join('&')})`  : "-";
+      const sgMinStr = stats.sg.min !== null ? `${stats.sg.min} (${stats.sg.minCells.map(c=>c+'番').join('&')})` : "-";
+      const sgMaxStr = stats.sg.max !== null ? `${stats.sg.max} (${stats.sg.maxCells.map(c=>c+'番').join('&')})` : "-";
+      const vMinStr  = stats.v.min  !== null ? `${stats.v.min} (${stats.v.minCells.map(c=>c+'番').join('&')})`  : "-";
+      const vMaxStr  = stats.v.max  !== null ? `${stats.v.max} (${stats.v.maxCells.map(c=>c+'番').join('&')})`  : "-";
 
       let csvContent = `■ 全体情報,,,\n`;
       csvContent += `全体電圧 (V),${totalV},,\n`;
@@ -602,7 +678,7 @@
         }
 
         const markStr = marks.join(" / ");
-        csvContent += `Cell ${i},${sgValStr},${vValStr},${markStr}\n`;
+        csvContent += `${i},${sgValStr},${vValStr},${markStr}\n`;
       }
 
       const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
@@ -621,7 +697,7 @@
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      speak("集計データ入りのCSVファイルをダウンロードしました");
+      speak("CSVファイルをダウンロードしました");
     });
   </script>
 </body>
