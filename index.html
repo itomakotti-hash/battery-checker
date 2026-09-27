@@ -27,9 +27,10 @@
     }
     .info-group label {
       font-weight: bold;
-      width: 70px;
+      width: 120px;
       color: #333;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
+      white-space: nowrap;
     }
     .info-group input {
       flex: 1;
@@ -137,7 +138,7 @@
 
   <h1>バッテリーセル記録</h1>
 
-  <!-- 会社名・型式入力エリア -->
+  <!-- 基本情報（会社名・型式・バッテリー型式・バッテリー容量・MFGナンバー）入力エリア -->
   <div class="company-info-container">
     <div class="info-group">
       <label for="company-name">会社名:</label>
@@ -146,6 +147,18 @@
     <div class="info-group">
       <label for="model-type">型式:</label>
       <input type="text" id="model-type" placeholder="例: EB100">
+    </div>
+    <div class="info-group">
+      <label for="battery-type">バッテリー型式:</label>
+      <input type="text" id="battery-type" placeholder="例: VFX-24V">
+    </div>
+    <div class="info-group">
+      <label for="battery-capacity">バッテリー容量:</label>
+      <input type="text" id="battery-capacity" placeholder="例: 400Ah / 5H">
+    </div>
+    <div class="info-group">
+      <label for="mfg-number">MFG No.:</label>
+      <input type="text" id="mfg-number" placeholder="例: MFG-2026-001">
     </div>
   </div>
 
@@ -609,6 +622,9 @@
       const stats = calculateMinMax();
       const companyName = document.getElementById('company-name').value || "-";
       const modelType = document.getElementById('model-type').value || "-";
+      const batteryType = document.getElementById('battery-type').value || "-";
+      const batteryCapacity = document.getElementById('battery-capacity').value || "-";
+      const mfgNumber = document.getElementById('mfg-number').value || "-";
       const totalV = document.getElementById('total-voltage').value || "-";
 
       const sgMinStr = stats.sg.min !== null ? `${stats.sg.min} (${stats.sg.minCells.map(c=>c+'番').join('&')})` : "-";
@@ -681,10 +697,13 @@
       // ワークシートデータ構築
       const wsData = [];
 
-      // 基本情報（会社名・型式）
+      // 基本情報（会社名・型式・バッテリー型式・バッテリー容量・MFGナンバー）
       wsData.push([{ v: "■ 基本情報", s: styleTitle }, { v: "", s: styleTitle }]);
       wsData.push([{ v: "会社名", s: styleRowLabel }, { v: companyName, s: styleNormalLeft }]);
       wsData.push([{ v: "型式", s: styleRowLabel }, { v: modelType, s: styleNormalLeft }]);
+      wsData.push([{ v: "バッテリー型式", s: styleRowLabel }, { v: batteryType, s: styleNormalLeft }]);
+      wsData.push([{ v: "バッテリー容量", s: styleRowLabel }, { v: batteryCapacity, s: styleNormalLeft }]);
+      wsData.push([{ v: "MFG No.", s: styleRowLabel }, { v: mfgNumber, s: styleNormalLeft }]);
       wsData.push([]);
 
       // 全体情報
