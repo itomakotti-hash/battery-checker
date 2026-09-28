@@ -111,10 +111,10 @@
     th, td { border: 1px solid #ccc; text-align: center; padding: 8px 4px; font-size: 0.95rem; }
     th { background: #f0f0f0; }
     
-    input[type="number"] {
+    input[type="text"], input[type="number"] {
       width: 90%;
       padding: 6px;
-      font-size: 1rem;
+      font-size: 0.95rem;
       border: 1px solid #ccc;
       border-radius: 4px;
       text-align: right;
@@ -217,7 +217,7 @@
                 <td style="font-weight:bold; background:#f9f9f9;">${i}</td>
                 <td>
                   <div style="display:flex; align-items:center; justify-content:center;">
-                    <input type="number" step="0.001" id="sg-${i}" oninput="updateMinMaxHighlights()">
+                    <input type="text" id="sg-${i}" oninput="updateMinMaxHighlights()" placeholder="1.280 または 測定不能">
                     <span id="badge-sg-${i}"></span>
                   </div>
                 </td>
@@ -273,7 +273,7 @@
       const guideText = "音声入力の使い方を説明します。" +
         "数値だけを『1点280』のように話すと、順番に自動入力されます。" +
         "特定の場所に入れるには、『5番 1点280』のように番数を言います。" +
-        "『5番』とだけ言うと、5番の入力待ち状態になります。" +
+        "比重が入らない場合は『測定不能』と話すと入力されます。" +
         "全体電圧は『トータル 48点5』と話します。" +
         "『比重モード』や『電圧モード』と話すと、入力モードを切り替えられます。" +
         "間違えた時は『戻す』、入力をやめる時は『終了』と言ってください。";
@@ -316,9 +316,11 @@
       let vList = [];
 
       for (let i = 1; i <= 24; i++) {
-        const sgVal = parseFloat(document.getElementById(`sg-${i}`).value);
+        const rawSg = document.getElementById(`sg-${i}`).value.trim();
+        const sgVal = parseFloat(rawSg);
         const vVal = parseFloat(document.getElementById(`v-${i}`).value);
 
+        // 「測定不能」等は数値にならないため自動で弾かれます
         if (!isNaN(sgVal)) sgList.push({ cell: i, val: sgVal });
         if (!isNaN(vVal)) vList.push({ cell: i, val: vVal });
       }
@@ -442,6 +444,7 @@
       return t;
     }
 
+    // 「○番」「セル○」などの明示的なセル番号指定のみを厳格に認識
     function extractExplicitCellNumber(text) {
       const match = text.match(/(?:セル|セルナンバー|ナンバー|No|no)?\s*(\d{1,2})\s*(?:番|セル)/);
       if (match) {
@@ -554,13 +557,18 @@
 
         const explicitCellNum = extractExplicitCellNumber(normalized);
         const floatMatches = normalized.match(/\d+\.\d+|\d+/g) || [];
+        const isUnmeasurable = /測定不能|測れない|不能|ふのう/.test(rawText);
 
         if (explicitCellNum !== null) {
           let valueStr = null;
-          for (let n of floatMatches) {
-            if (n !== String(explicitCellNum)) {
-              valueStr = n;
-              break;
+          if (isUnmeasurable) {
+            valueStr = "測定不能";
+          } else {
+            for (let n of floatMatches) {
+              if (n !== String(explicitCellNum)) {
+                valueStr = n;
+                break;
+              }
             }
           }
 
@@ -573,12 +581,19 @@
           return;
         }
 
-        if (pendingCellNum && floatMatches.length > 0) {
-          applyValueToCell(pendingCellNum, floatMatches[0]);
-          return;
+        if (pendingCellNum) {
+          if (isUnmeasurable) {
+            applyValueToCell(pendingCellNum, "測定不能");
+            return;
+          } else if (floatMatches.length > 0) {
+            applyValueToCell(pendingCellNum, floatMatches[0]);
+            return;
+          }
         }
 
-        if (floatMatches.length > 0) {
+        if (isUnmeasurable) {
+          applyValueToCell(currentAutoCellNum, "測定不能");
+        } else if (floatMatches.length > 0) {
           applyValueToCell(currentAutoCellNum, floatMatches[0]);
         }
       };
@@ -599,19 +614,42 @@
 
         let updated = false;
 
-        if (currentMode === 'sg') {
-          document.getElementById(`sg-${cellNum}`).value = val;
-          updated = true;
-        } else if (currentMode === 'v') {
-          document.getElementById(`v-${cellNum}`).value = val;
-          updated = true;
-        } else if (currentMode === 'both') {
-          if (parseFloat(val) > 1.0 && parseFloat(val) < 2.0) {
-            document.getElementById(`sg-${cellNum}`).value = val;
+        if (val === "測定不能") {
+          // 比重欄に測定不能を適用（比重モードまたは両方モードの場合）
+          if (currentMode === 'sg' || currentMode === 'both') {
+            document.getElementById(`sg-${cellNum}`).value = "測定不能";
             updated = true;
-          } else if (parseFloat(val) >= 2.0) {
+          } else if (currentMode === 'v') {
+            speak("電圧モードでは測定不能を入力できません");
+            return;
+          }
+        } else {
+          const numVal = parseFloat(val);
+
+          if (currentMode === 'sg') {
+            // 比重の範囲制限 (1.100 〜 1.400)
+            if (!isNaN(numVal) && numVal >= 1.100 && numVal <= 1.400) {
+              document.getElementById(`sg-${cellNum}`).value = val;
+              updated = true;
+            } else {
+              speak("比重の範囲外です。1点1から1点4の範囲で発話してください");
+              return;
+            }
+          } else if (currentMode === 'v') {
             document.getElementById(`v-${cellNum}`).value = val;
             updated = true;
+          } else if (currentMode === 'both') {
+            // 両方モード時：比重の範囲内であれば比重、それ以外で2.0以上なら電圧
+            if (!isNaN(numVal) && numVal >= 1.100 && numVal <= 1.400) {
+              document.getElementById(`sg-${cellNum}`).value = val;
+              updated = true;
+            } else if (!isNaN(numVal) && numVal >= 2.0) {
+              document.getElementById(`v-${cellNum}`).value = val;
+              updated = true;
+            } else {
+              speak("数値の判定ができませんでした");
+              return;
+            }
           }
         }
 
@@ -783,20 +821,26 @@
 
         let sgRow = [{ v: "比重 (S.G.)", s: styleRowLabel }];
         for (let i = startCell; i <= endCell; i++) {
-          const rawVal = document.getElementById(`sg-${i}`).value;
+          const rawVal = document.getElementById(`sg-${i}`).value.trim();
           const val = parseFloat(rawVal);
           let cellStyle = styleNormal;
-          if (!isNaN(val)) {
+
+          if (rawVal === "測定不能") {
+            cellStyle = styleNormal;
+            sgRow.push({ v: "測定不能", s: cellStyle, t: "s" });
+          } else if (!isNaN(val)) {
             if (stats.sg.max !== null && val === stats.sg.max) cellStyle = styleMax;
             else if (stats.sg.min !== null && val === stats.sg.min) cellStyle = styleMin;
+            sgRow.push({ v: val, s: cellStyle, t: "n" });
+          } else {
+            sgRow.push({ v: "", s: cellStyle, t: "s" });
           }
-          sgRow.push({ v: rawVal !== "" ? val : "", s: cellStyle, t: rawVal !== "" ? "n" : "s" });
         }
         wsData.push(sgRow);
 
         let vRow = [{ v: "電圧 (V)", s: styleRowLabel }];
         for (let i = startCell; i <= endCell; i++) {
-          const rawVal = document.getElementById(`v-${i}`).value;
+          const rawVal = document.getElementById(`v-${i}`).value.trim();
           const val = parseFloat(rawVal);
           let cellStyle = styleNormal;
           if (!isNaN(val)) {
