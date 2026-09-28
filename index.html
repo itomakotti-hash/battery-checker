@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（写真添付・装飾Excel出力対応版）</title>
+  <title>バッテリーセル記録（写真自動回転補正・Excel出力対応版）</title>
   <!-- Excelファイル（.xlsx）生成・画像埋め込み対応ライブラリ (ExcelJS) -->
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
   <!-- ファイルダウンロード用ライブラリ (FileSaver.js) -->
@@ -71,11 +71,12 @@
     }
     #photo-preview {
       max-width: 120px;
-      max-height: 90px;
+      max-height: 120px;
       border-radius: 4px;
       border: 1px solid #ccc;
       display: none;
-      object-fit: cover;
+      object-fit: contain;
+      background: #eee;
     }
 
     .controls { 
@@ -295,32 +296,109 @@
     let currentAutoCellNum = 1;
     let isSpeaking = false;
 
-    // 写真保持用データ（Base64/ArrayBuffer）
+    // 写真保持用データ
     let uploadedImageBase64 = null;
     let uploadedImageType = "png";
+    let imageAspectRatio = 1.33; // デフォルト縦横比（横/縦）
 
-    // 写真プレビュー処理
+    // ExifのOrientation（向き）解析関数
+    function getExifOrientation(file, callback) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const view = new DataView(e.target.result);
+        if (view.getUint16(0, false) !== 0xFFD8) return callback(-2);
+        const length = view.byteLength;
+        let offset = 2;
+        while (offset < length) {
+          if (view.getUint16(offset + 2, false) <= 8) return callback(-1);
+          const marker = view.getUint16(offset, false);
+          offset += 2;
+          if (marker === 0xFFE1) {
+            if (view.getUint32(offset += 2, false) !== 0x45786966) return callback(-1);
+            const little = view.getUint16(offset += 6, false) === 0x4949;
+            offset += view.getUint32(offset + 4, little);
+            const tags = view.getUint16(offset, little);
+            offset += 2;
+            for (let i = 0; i < tags; i++) {
+              if (view.getUint16(offset + (i * 12), little) === 0x0112) {
+                return callback(view.getUint16(offset + (i * 12) + 8, little));
+              }
+            }
+          } else if ((marker & 0xFF00) !== 0xFF00) {
+            break;
+          } else {
+            offset += view.getUint16(offset, false);
+          }
+        }
+        return callback(-1);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // 写真選択・自動向き回転補正処理
     function handlePhotoSelect(event) {
       const file = event.target.files[0];
       if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        uploadedImageBase64 = e.target.result;
-        
-        // 拡張子/タイプ取得
-        if (file.type.includes("jpeg") || file.type.includes("jpg")) {
-          uploadedImageType = "jpeg";
-        } else {
-          uploadedImageType = "png";
-        }
+      getExifOrientation(file, function(orientation) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = new Image();
+          img.onload = function() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
 
-        const imgElem = document.getElementById('photo-preview');
-        imgElem.src = uploadedImageBase64;
-        imgElem.style.display = 'block';
-        document.getElementById('remove-photo-btn').style.display = 'inline-block';
-      };
-      reader.readAsDataURL(file);
+            let width = img.width;
+            let height = img.height;
+
+            // 長辺を最大 1200px に縮小（軽快な動作のため）
+            const maxDim = 1200;
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+
+            // Orientation に応じて Canvas の幅高さをセット＆回転設定
+            if (orientation >= 5 && orientation <= 8) {
+              canvas.width = height;
+              canvas.height = width;
+            } else {
+              canvas.width = width;
+              canvas.height = height;
+            }
+
+            switch (orientation) {
+              case 2: ctx.transform(-1, 0, 0, 1, width, 0); break;
+              case 3: ctx.transform(-1, 0, 0, -1, width, height); break;
+              case 4: ctx.transform(1, 0, 0, -1, 0, height); break;
+              case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;
+              case 6: ctx.transform(0, 1, -1, 0, height, 0); break;
+              case 7: ctx.transform(0, -1, -1, 0, height, width); break;
+              case 8: ctx.transform(0, -1, 1, 0, 0, width); break;
+              default: break;
+            }
+
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // 正しい向きに回転された画像をBase64で保存
+            uploadedImageBase64 = canvas.toDataURL('image/jpeg', 0.85);
+            uploadedImageType = 'jpeg';
+            imageAspectRatio = canvas.width / canvas.height;
+
+            const imgElem = document.getElementById('photo-preview');
+            imgElem.src = uploadedImageBase64;
+            imgElem.style.display = 'block';
+            document.getElementById('remove-photo-btn').style.display = 'inline-block';
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
     }
 
     function removePhoto() {
@@ -546,7 +624,7 @@
         "数値のみを『1.250』や『2.15』とおっしゃると、1番セルから順に自動入力されます。" +
         "特定セルを指定する場合は『5番 1.250』や『12番 測定不能』とお話しください。" +
         "全体電圧は『トータル 48.5』で入力できます。" +
-        "銘板写真を添付した場合は、Excelファイル出力時に表の最下部に貼り付けられます。";
+        "銘板写真を添付した場合は、自動的に向きを整えてExcelファイル最下部に貼り付けられます。";
       speak(guideText);
     });
 
@@ -1129,22 +1207,27 @@
 
       let nextRow = 23;
 
-      // 5. 📸 表の末尾に「バッテリー銘板写真」を貼り付け
+      // 5. 📸 表の末尾に「バッテリー銘板写真」を貼り付け（縦横比に応じて高さ調整）
       if (uploadedImageBase64) {
         createSectionHeader(nextRow, '■ バッテリー銘板写真');
         
-        // 銘板写真貼り付けエリア用にセルを結合
-        worksheet.mergeCells(`A${nextRow + 1}:M${nextRow + 12}`);
+        // 縦写真か横写真かに応じてExcel上の結合行数を調整
+        let rowSpan = 14; 
+        if (imageAspectRatio < 1) {
+          rowSpan = 18; // 縦長写真の場合は高さを広げる
+        }
+
+        worksheet.mergeCells(`A${nextRow + 1}:M${nextRow + rowSpan}`);
 
         const imageId = workbook.addImage({
           base64: uploadedImageBase64,
           extension: uploadedImageType,
         });
 
-        // 結合エリア（A24:M35）内に綺麗に収まるよう配置
+        // エリア内に収まるよう配置
         worksheet.addImage(imageId, {
           tl: { col: 0.2, row: nextRow },
-          br: { col: 12.8, row: nextRow + 12 },
+          br: { col: 12.8, row: nextRow + rowSpan },
           editAs: 'oneCell'
         });
       }
@@ -1173,7 +1256,7 @@
       const buffer = await workbook.xlsx.writeBuffer();
       saveAs(new Blob([buffer]), fileName);
 
-      speak("お疲れ様です。銘板写真を添付した測定結果Excelファイルを出力しました");
+      speak("お疲れ様です。銘板写真を自動補正して添付した測定結果Excelファイルを出力しました");
     });
   </script>
 </body>
