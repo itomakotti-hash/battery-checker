@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（写真自動回転補正・Excel出力対応版）</title>
+  <title>バッテリーセル記録（写真左90度回転・Excel出力対応版）</title>
   <!-- Excelファイル（.xlsx）生成・画像埋め込み対応ライブラリ (ExcelJS) -->
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
   <!-- ファイルダウンロード用ライブラリ (FileSaver.js) -->
@@ -299,9 +299,8 @@
     // 写真保持用データ
     let uploadedImageBase64 = null;
     let uploadedImageType = "png";
-    let imageAspectRatio = 1.33; // デフォルト縦横比（横/縦）
+    let imageAspectRatio = 1.33;
 
-    // ExifのOrientation（向き）解析関数
     function getExifOrientation(file, callback) {
       const reader = new FileReader();
       reader.onload = function(e) {
@@ -335,7 +334,7 @@
       reader.readAsArrayBuffer(file);
     }
 
-    // 写真選択・自動向き回転補正処理
+    // 90度左回転を適用する写真選択処理
     function handlePhotoSelect(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -351,7 +350,6 @@
             let width = img.width;
             let height = img.height;
 
-            // 長辺を最大 1200px に縮小（軽快な動作のため）
             const maxDim = 1200;
             if (width > maxDim || height > maxDim) {
               if (width > height) {
@@ -363,29 +361,16 @@
               }
             }
 
-            // Orientation に応じて Canvas の幅高さをセット＆回転設定
-            if (orientation >= 5 && orientation <= 8) {
-              canvas.width = height;
-              canvas.height = width;
-            } else {
-              canvas.width = width;
-              canvas.height = height;
-            }
+            // 90度左回転するためキャンバス幅高さを反転
+            canvas.width = height;
+            canvas.height = width;
 
-            switch (orientation) {
-              case 2: ctx.transform(-1, 0, 0, 1, width, 0); break;
-              case 3: ctx.transform(-1, 0, 0, -1, width, height); break;
-              case 4: ctx.transform(1, 0, 0, -1, 0, height); break;
-              case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;
-              case 6: ctx.transform(0, 1, -1, 0, height, 0); break;
-              case 7: ctx.transform(0, -1, -1, 0, height, width); break;
-              case 8: ctx.transform(0, -1, 1, 0, 0, width); break;
-              default: break;
-            }
+            // 左に90度回転
+            ctx.translate(0, width);
+            ctx.rotate(-90 * Math.PI / 180);
 
             ctx.drawImage(img, 0, 0, width, height);
 
-            // 正しい向きに回転された画像をBase64で保存
             uploadedImageBase64 = canvas.toDataURL('image/jpeg', 0.85);
             uploadedImageType = 'jpeg';
             imageAspectRatio = canvas.width / canvas.height;
@@ -408,11 +393,9 @@
       document.getElementById('remove-photo-btn').style.display = 'none';
     }
 
-    // 音声モード: null（停止）, 'info'（基本情報）, 'cell'（セル数値入力）
     let activeListenMode = null; 
     let recognition = null;
 
-    // 容量フォーマット関数
     function formatCapacityValue(val) {
       if (!val) return "";
       const match = val.match(/\d+/);
@@ -426,7 +409,6 @@
       inputElem.value = formatCapacityValue(inputElem.value);
     }
 
-    // フォーマット用関数（比重：小数点第3位、電圧：小数点第2位）
     function formatSgValue(val) {
       if (val === "測定不能" || val === "" || val === null || val === undefined) return val;
       const num = parseFloat(val);
@@ -624,7 +606,7 @@
         "数値のみを『1.250』や『2.15』とおっしゃると、1番セルから順に自動入力されます。" +
         "特定セルを指定する場合は『5番 1.250』や『12番 測定不能』とお話しください。" +
         "全体電圧は『トータル 48.5』で入力できます。" +
-        "銘板写真を添付した場合は、自動的に向きを整えてExcelファイル最下部に貼り付けられます。";
+        "銘板写真を添付した場合は、90度左回転させてExcelファイル最下部に貼り付けられます。";
       speak(guideText);
     });
 
@@ -1029,7 +1011,6 @@
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('バッテリー測定結果');
 
-      // ページ設定（A4縦・自動フィット）
       worksheet.pageSetup = {
         paperSize: 9,
         orientation: 'portrait',
@@ -1038,7 +1019,6 @@
         fitToHeight: 0
       };
 
-      // 共通スタイル定義
       const fontDefault = { name: 'メイリオ', size: 9 };
       const borderThin = {
         top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
@@ -1047,7 +1027,6 @@
         right: { style: 'thin', color: { argb: 'FFCCCCCC' } }
       };
 
-      // スタイル定義ヘルパー関数
       const applyRowStyles = (rowNumber, values, styleOptions) => {
         const row = worksheet.getRow(rowNumber);
         values.forEach((val, idx) => {
@@ -1061,7 +1040,6 @@
         });
       };
 
-      // 1. タイトル行
       worksheet.mergeCells('A1:M1');
       const titleCell = worksheet.getCell('A1');
       titleCell.value = 'バッテリー測定結果';
@@ -1069,7 +1047,6 @@
       titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
       titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
-      // 情報セクション作成ヘルパー
       const createSectionHeader = (rowNum, title) => {
         worksheet.mergeCells(`A${rowNum}:B${rowNum}`);
         const cell = worksheet.getCell(`A${rowNum}`);
@@ -1099,7 +1076,6 @@
         }
       };
 
-      // 2. 基本情報
       createSectionHeader(2, '■ 基本情報');
       createMergedInfoRow(3, '会社名', companyName);
       createMergedInfoRow(4, '型式', modelType);
@@ -1108,7 +1084,6 @@
       createMergedInfoRow(7, 'MFG No.', mfgNumber);
       createMergedInfoRow(8, '測定区分', measurementTiming);
 
-      // 3. 全体情報
       createSectionHeader(9, '■ 全体情報');
       createMergedInfoRow(10, '全体電圧 (V)', totalV !== "-" ? `${totalV} V` : "-");
       
@@ -1120,11 +1095,9 @@
       createMergedInfoRow(13, '電圧 最低値', vMinStr, fillBlue, 'FF1976D2');
       createMergedInfoRow(14, '電圧 最高値', vMaxStr, fillRed, 'FFD32F2F');
 
-      // 4. 24セル測定データテーブル構築
       const appendBlockBlock = (startRow, title, startCell, endCell, headerBg) => {
         createSectionHeader(startRow, `■ ${title}`);
 
-        // セルNo. ヘッダー
         const headers = ['セル No.'];
         for (let i = startCell; i <= endCell; i++) headers.push(i);
         applyRowStyles(startRow + 1, headers, {
@@ -1134,7 +1107,6 @@
         worksheet.getRow(startRow + 1).getCell(1).font = { name: 'メイリオ', size: 9, bold: true };
         worksheet.getRow(startRow + 1).getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
 
-        // 比重行
         const sgRow = worksheet.getRow(startRow + 2);
         sgRow.getCell(1).value = '比重 (S.G.)';
         sgRow.getCell(1).font = { name: 'メイリオ', size: 9, bold: true };
@@ -1169,7 +1141,6 @@
           }
         }
 
-        // 電圧行
         const vRow = worksheet.getRow(startRow + 3);
         vRow.getCell(1).value = '電圧 (V)';
         vRow.getCell(1).font = { name: 'メイリオ', size: 9, bold: true };
@@ -1207,14 +1178,12 @@
 
       let nextRow = 23;
 
-      // 5. 📸 表の末尾に「バッテリー銘板写真」を貼り付け（縦横比に応じて高さ調整）
       if (uploadedImageBase64) {
         createSectionHeader(nextRow, '■ バッテリー銘板写真');
         
-        // 縦写真か横写真かに応じてExcel上の結合行数を調整
         let rowSpan = 14; 
         if (imageAspectRatio < 1) {
-          rowSpan = 18; // 縦長写真の場合は高さを広げる
+          rowSpan = 18;
         }
 
         worksheet.mergeCells(`A${nextRow + 1}:M${nextRow + rowSpan}`);
@@ -1224,7 +1193,6 @@
           extension: uploadedImageType,
         });
 
-        // エリア内に収まるよう配置
         worksheet.addImage(imageId, {
           tl: { col: 0.2, row: nextRow },
           br: { col: 12.8, row: nextRow + rowSpan },
@@ -1232,13 +1200,11 @@
         });
       }
 
-      // 列幅の調整
       worksheet.getColumn(1).width = 15;
       for (let col = 2; col <= 13; col++) {
         worksheet.getColumn(col).width = 6;
       }
 
-      // ファイル保存
       const now = new Date();
       const timestamp = now.getFullYear() +
         String(now.getMonth() + 1).padStart(2, '0') +
@@ -1256,7 +1222,7 @@
       const buffer = await workbook.xlsx.writeBuffer();
       saveAs(new Blob([buffer]), fileName);
 
-      speak("お疲れ様です。銘板写真を自動補正して添付した測定結果Excelファイルを出力しました");
+      speak("お疲れ様です。銘板写真を90度左回転して添付した測定結果Excelファイルを出力しました");
     });
   </script>
 </body>
