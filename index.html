@@ -875,7 +875,7 @@
       alert("お使いのブラウザは音声認識機能に対応していません。Google Chromeをお試しください。");
     }
 
-    // 装飾付きExcelファイル（.xlsx）の出力処理（タイトル追加・A4縦1ページ完全最適化版）
+    // 装飾付きExcelファイル（.xlsx）の出力処理（B10〜M13セル結合・左寄せ対応版）
     document.getElementById('export-btn').addEventListener('click', () => {
       if (typeof XLSX === 'undefined') {
         alert("Excelライブラリの読み込みに失敗しました。インターネット接続を確認してください。");
@@ -993,6 +993,50 @@
         numFmt: "0.00"
       };
 
+      // 結合セル（B列〜M列）用の左寄せスタイル定義
+      const styleMergedLeft = {
+        font: { size: 9, color: { rgb: "000000" } },
+        border: thinBorder,
+        alignment: { horizontal: "left", vertical: "center" }
+      };
+
+      const styleMergedMaxSgLeft = {
+        font: { bold: true, size: 9, color: { rgb: "D32F2F" } },
+        fill: { fgColor: { rgb: "FFEBEE" } },
+        border: thinBorder,
+        alignment: { horizontal: "left", vertical: "center" }
+      };
+
+      const styleMergedMinSgLeft = {
+        font: { bold: true, size: 9, color: { rgb: "1976D2" } },
+        fill: { fgColor: { rgb: "E3F2FD" } },
+        border: thinBorder,
+        alignment: { horizontal: "left", vertical: "center" }
+      };
+
+      const styleMergedMaxVLeft = {
+        font: { bold: true, size: 9, color: { rgb: "D32F2F" } },
+        fill: { fgColor: { rgb: "FFEBEE" } },
+        border: thinBorder,
+        alignment: { horizontal: "left", vertical: "center" }
+      };
+
+      const styleMergedMinVLeft = {
+        font: { bold: true, size: 9, color: { rgb: "1976D2" } },
+        fill: { fgColor: { rgb: "E3F2FD" } },
+        border: thinBorder,
+        alignment: { horizontal: "left", vertical: "center" }
+      };
+
+      // 結合行（B〜M）用のダミーセル作成ヘルパー関数
+      const makeMergedRow = (label, valStr, style) => {
+        let row = [{ v: label, s: styleRowLabel }, { v: valStr, s: style }];
+        for (let i = 2; i <= 12; i++) {
+          row.push({ v: "", s: style });
+        }
+        return row;
+      };
+
       // ワークシートデータ構築
       const wsData = [];
 
@@ -1002,20 +1046,20 @@
 
       // 基本情報
       wsData.push([{ v: "■ 基本情報", s: styleTitle }, { v: "", s: styleTitle }]);
-      wsData.push([{ v: "会社名", s: styleRowLabel }, { v: companyName, s: styleNormalLeft }]);
-      wsData.push([{ v: "型式", s: styleRowLabel }, { v: modelType, s: styleNormalLeft }]);
-      wsData.push([{ v: "バッテリー型式", s: styleRowLabel }, { v: batteryType, s: styleNormalLeft }]);
-      wsData.push([{ v: "バッテリー容量", s: styleRowLabel }, { v: batteryCapacity, s: styleNormalLeft }]);
-      wsData.push([{ v: "MFG No.", s: styleRowLabel }, { v: mfgNumber, s: styleNormalLeft }]);
-      wsData.push([{ v: "測定区分", s: styleRowLabel }, { v: measurementTiming, s: styleNormalLeft }]);
+      wsData.push(makeMergedRow("会社名", companyName, styleMergedLeft));
+      wsData.push(makeMergedRow("型式", modelType, styleMergedLeft));
+      wsData.push(makeMergedRow("バッテリー型式", batteryType, styleMergedLeft));
+      wsData.push(makeMergedRow("バッテリー容量", batteryCapacity, styleMergedLeft));
+      wsData.push(makeMergedRow("MFG No.", mfgNumber, styleMergedLeft));
+      wsData.push(makeMergedRow("測定区分", measurementTiming, styleMergedLeft));
 
       // 全体情報
       wsData.push([{ v: "■ 全体情報", s: styleTitle }, { v: "", s: styleTitle }]);
-      wsData.push([{ v: "全体電圧 (V)", s: styleRowLabel }, { v: totalV !== "-" ? parseFloat(totalV) : "-", s: styleNormalV, t: totalV !== "-" ? "n" : "s" }]);
-      wsData.push([{ v: "比重 最低値", s: styleRowLabel }, { v: sgMinStr, s: styleMinSg }]);
-      wsData.push([{ v: "比重 最高値", s: styleRowLabel }, { v: sgMaxStr, s: styleMaxSg }]);
-      wsData.push([{ v: "電圧 最低値", s: styleRowLabel }, { v: vMinStr, s: styleMinV }]);
-      wsData.push([{ v: "電圧 最高値", s: styleRowLabel }, { v: vMaxStr, s: styleMaxV }]);
+      wsData.push(makeMergedRow("全体電圧 (V)", totalV !== "-" ? `${totalV} V` : "-", styleMergedLeft));
+      wsData.push(makeMergedRow("比重 最低値", sgMinStr, styleMergedMinSgLeft));
+      wsData.push(makeMergedRow("比重 最高値", sgMaxStr, styleMergedMaxSgLeft));
+      wsData.push(makeMergedRow("電圧 最低値", vMinStr, styleMergedMinVLeft));
+      wsData.push(makeMergedRow("電圧 最高値", vMaxStr, styleMergedMaxVLeft));
 
       // ブロック作成関数
       const appendBlock = (title, startCell, endCell, headerStyle) => {
@@ -1067,9 +1111,22 @@
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-      // タイトル行（1行目 A1:M1）のセル結合
+      // セル結合指定（1行目タイトル、基本情報行、全体情報行など）
       ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } }
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } },   // メインタイトル
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 1 } },    // ■ 基本情報
+        { s: { r: 2, c: 1 }, e: { r: 2, c: 12 } },   // 会社名
+        { s: { r: 3, c: 1 }, e: { r: 3, c: 12 } },   // 型式
+        { s: { r: 4, c: 1 }, e: { r: 4, c: 12 } },   // バッテリー型式
+        { s: { r: 5, c: 1 }, e: { r: 5, c: 12 } },   // バッテリー容量
+        { s: { r: 6, c: 1 }, e: { r: 6, c: 12 } },   // MFG No.
+        { s: { r: 7, c: 1 }, e: { r: 7, c: 12 } },   // 測定区分
+        { s: { r: 8, c: 0 }, e: { r: 8, c: 1 } },    // ■ 全体情報
+        { s: { r: 9, c: 1 }, e: { r: 9, c: 12 } },   // 全体電圧
+        { s: { r: 10, c: 1 }, e: { r: 10, c: 12 } }, // 比重 最低値（B11:M11）
+        { s: { r: 11, c: 1 }, e: { r: 11, c: 12 } }, // 比重 最高値（B12:M12）
+        { s: { r: 12, c: 1 }, e: { r: 12, c: 12 } }, // 電圧 最低値（B13:M13）
+        { s: { r: 13, c: 1 }, e: { r: 13, c: 12 } }  // 電圧 最高値（B14:M14）
       ];
 
       // 列幅の調整（A4縦1ページに収まる幅）
