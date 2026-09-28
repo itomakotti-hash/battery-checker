@@ -176,6 +176,16 @@
     .active-row { background-color: #e6f7ff !important; }
     .pending-row { background-color: #fffbe6 !important; }
   </style>
+  <script>
+    // パスワード認証処理
+    const correctPassword = "319801";
+    const entered = prompt("パスワードを入力してください：");
+    if (entered !== correctPassword) {
+      alert("パスワードが違います。アクセスを拒否します。");
+      document.documentElement.innerHTML = "<h2 style='text-align:center; margin-top:50px; font-family:sans-serif;'>アクセスが制限されています。<br>正しいパスワードを入力して再読み込みしてください。</h2>";
+      throw new Error("Unauthorized");
+    }
+  </script>
 </head>
 <body>
 
