@@ -173,7 +173,7 @@
     </div>
     <div class="info-group">
       <label for="battery-capacity">バッテリー容量:</label>
-      <input type="text" id="battery-capacity" placeholder="例: 400Ah / 5H">
+      <input type="text" id="battery-capacity" placeholder="例: 400Ah / 5H" onchange="formatCapacityInput(this)">
     </div>
     <div class="info-group">
       <label for="mfg-number">MFG No.:</label>
@@ -262,6 +262,20 @@
     // 音声モード: null（停止）, 'info'（基本情報）, 'cell'（セル数値入力）
     let activeListenMode = null; 
     let recognition = null;
+
+    // 容量フォーマット関数（「400」や「400Ah」を「400Ah / 5H」へ統一整形）
+    function formatCapacityValue(val) {
+      if (!val) return "";
+      const match = val.match(/\d+/);
+      if (match) {
+        return `${match[0]}Ah / 5H`;
+      }
+      return val;
+    }
+
+    function formatCapacityInput(inputElem) {
+      inputElem.value = formatCapacityValue(inputElem.value);
+    }
 
     // フォーマット用関数（比重：小数点第3位、電圧：小数点第2位）
     function formatSgValue(val) {
@@ -458,7 +472,7 @@
     document.getElementById('guide-btn').addEventListener('click', () => {
       const guideText = 
         "音声入力の使い方を説明します。" +
-        "基本情報は右上『基本情報入力』ボタンを押し『会社名 トヨタ』『型式 EB100』『充電前』のようにお話しください。" +
+        "基本情報は右上『基本情報入力』ボタンを押し『会社名 トヨタ』『型式 EB100』『容量 400』『充電前』のようにお話しください。" +
         "セル数値の入力は『数値入力 開始』ボタンを押します。" +
         "数値のみを『1.250』や『2.15』とおっしゃると、1番セルから順に自動入力されます。" +
         "特定セルを指定する場合は『5番 1.250』や『12番 測定不能』とお話しください。" +
@@ -629,11 +643,12 @@
             }
           }
 
-          // 4. バッテリー容量
+          // 4. バッテリー容量 (★自動的に "400Ah / 5H" 形式へ変換)
           if (rawText.match(/バッテリー容量|容量|ようりょう/)) {
             const val = normalized.replace(/^.*?(?:バッテリー容量|容量|ようりょう)\s*/, '').replace(/(?:MFG|製造|測定|区分|充電).*$/, '').trim();
             if (val) {
-              document.getElementById('battery-capacity').value = val;
+              const formattedCapacity = formatCapacityValue(val);
+              document.getElementById('battery-capacity').value = formattedCapacity;
               registeredCount++;
             }
           }
