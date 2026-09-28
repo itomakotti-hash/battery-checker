@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（写真左90度回転・Excel出力対応版）</title>
+  <title>バッテリーセル記録（撮影写真そのまま出力版）</title>
   <!-- Excelファイル（.xlsx）生成・画像埋め込み対応ライブラリ (ExcelJS) -->
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
   <!-- ファイルダウンロード用ライブラリ (FileSaver.js) -->
@@ -298,92 +298,54 @@
 
     // 写真保持用データ
     let uploadedImageBase64 = null;
-    let uploadedImageType = "png";
+    let uploadedImageType = "jpeg";
     let imageAspectRatio = 1.33;
 
-    function getExifOrientation(file, callback) {
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const view = new DataView(e.target.result);
-        if (view.getUint16(0, false) !== 0xFFD8) return callback(-2);
-        const length = view.byteLength;
-        let offset = 2;
-        while (offset < length) {
-          if (view.getUint16(offset + 2, false) <= 8) return callback(-1);
-          const marker = view.getUint16(offset, false);
-          offset += 2;
-          if (marker === 0xFFE1) {
-            if (view.getUint32(offset += 2, false) !== 0x45786966) return callback(-1);
-            const little = view.getUint16(offset += 6, false) === 0x4949;
-            offset += view.getUint32(offset + 4, little);
-            const tags = view.getUint16(offset, little);
-            offset += 2;
-            for (let i = 0; i < tags; i++) {
-              if (view.getUint16(offset + (i * 12), little) === 0x0112) {
-                return callback(view.getUint16(offset + (i * 12) + 8, little));
-              }
-            }
-          } else if ((marker & 0xFF00) !== 0xFF00) {
-            break;
-          } else {
-            offset += view.getUint16(offset, false);
-          }
-        }
-        return callback(-1);
-      };
-      reader.readAsArrayBuffer(file);
-    }
-
-    // 90度左回転を適用する写真選択処理
+    // 撮影したそのままの写真を無加工で取り込む処理
     function handlePhotoSelect(event) {
       const file = event.target.files[0];
       if (!file) return;
 
-      getExifOrientation(file, function(orientation) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          const img = new Image();
-          img.onload = function() {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
 
-            let width = img.width;
-            let height = img.height;
+          let width = img.width;
+          let height = img.height;
 
-            const maxDim = 1200;
-            if (width > maxDim || height > maxDim) {
-              if (width > height) {
-                height = Math.round((height * maxDim) / width);
-                width = maxDim;
-              } else {
-                width = Math.round((width * maxDim) / height);
-                height = maxDim;
-              }
+          // 長辺を最大 1200px に縮小
+          const maxDim = 1200;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
             }
+          }
 
-            // 90度左回転するためキャンバス幅高さを反転
-            canvas.width = height;
-            canvas.height = width;
+          canvas.width = width;
+          canvas.height = height;
 
-            // 左に90度回転
-            ctx.translate(0, width);
-            ctx.rotate(-90 * Math.PI / 180);
+          // 回転処理を一切行わずにそのまま描画
+          ctx.drawImage(img, 0, 0, width, height);
 
-            ctx.drawImage(img, 0, 0, width, height);
+          uploadedImageBase64 = canvas.toDataURL('image/jpeg', 0.85);
+          uploadedImageType = 'jpeg';
+          imageAspectRatio = canvas.width / canvas.height;
 
-            uploadedImageBase64 = canvas.toDataURL('image/jpeg', 0.85);
-            uploadedImageType = 'jpeg';
-            imageAspectRatio = canvas.width / canvas.height;
-
-            const imgElem = document.getElementById('photo-preview');
-            imgElem.src = uploadedImageBase64;
-            imgElem.style.display = 'block';
-            document.getElementById('remove-photo-btn').style.display = 'inline-block';
-          };
-          img.src = e.target.result;
+          const imgElem = document.getElementById('photo-preview');
+          imgElem.src = uploadedImageBase64;
+          imgElem.style.display = 'block';
+          document.getElementById('remove-photo-btn').style.display = 'inline-block';
         };
-        reader.readAsDataURL(file);
-      });
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
     }
 
     function removePhoto() {
@@ -606,7 +568,7 @@
         "数値のみを『1.250』や『2.15』とおっしゃると、1番セルから順に自動入力されます。" +
         "特定セルを指定する場合は『5番 1.250』や『12番 測定不能』とお話しください。" +
         "全体電圧は『トータル 48.5』で入力できます。" +
-        "銘板写真を添付した場合は、90度左回転させてExcelファイル最下部に貼り付けられます。";
+        "銘板写真を添付した場合は、撮影したままの向きでExcelファイル最下部に貼り付けられます。";
       speak(guideText);
     });
 
@@ -1222,7 +1184,7 @@
       const buffer = await workbook.xlsx.writeBuffer();
       saveAs(new Blob([buffer]), fileName);
 
-      speak("お疲れ様です。銘板写真を90度左回転して添付した測定結果Excelファイルを出力しました");
+      speak("お疲れ様です。撮影されたそのままの銘板写真を添付した測定結果Excelファイルを出力しました");
     });
   </script>
 </body>
