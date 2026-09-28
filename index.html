@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（写真比率完全保持版）</title>
+  <title>バッテリーセル記録（メール添付ボタン追加版）</title>
   <!-- Excelファイル（.xlsx）生成・画像埋め込み対応ライブラリ (ExcelJS) -->
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
   <!-- ファイルダウンロード用ライブラリ (FileSaver.js) -->
@@ -101,6 +101,7 @@
     #guide-btn { background-color: #0288d1; color: white; border: none; }
     #undo-btn { background-color: #ff9800; color: white; border: none; }
     #export-btn { background-color: #1D6F42; color: white; border: none; }
+    #email-btn { background-color: #0078D4; color: white; border: none; }
     
     .total-v-container {
       width: 100%;
@@ -231,6 +232,7 @@
     <button id="guide-btn">❓ 音声ガイド</button>
     <button id="undo-btn">↩️ 1つ戻す</button>
     <button id="export-btn">📊 Excelファイル（.xlsx）出力</button>
+    <button id="email-btn">📧 メールで送信</button>
     <span id="status">停止中</span>
 
     <div class="total-v-container">
@@ -302,7 +304,6 @@
     let originalImageWidth = 400;
     let originalImageHeight = 300;
 
-    // 撮影したそのままの写真を取り込み、本来のピクセルサイズを保持する処理
     function handlePhotoSelect(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -317,7 +318,6 @@
           let width = img.width;
           let height = img.height;
 
-          // 長辺を最大 1200px に縮小
           const maxDim = 1200;
           if (width > maxDim || height > maxDim) {
             if (width > height) {
@@ -331,8 +331,6 @@
 
           canvas.width = width;
           canvas.height = height;
-
-          // 回転処理を一切行わずにそのまま描画
           ctx.drawImage(img, 0, 0, width, height);
 
           uploadedImageBase64 = canvas.toDataURL('image/jpeg', 0.85);
@@ -569,8 +567,7 @@
         "セル数値の入力は『数値入力 開始』ボタンを押します。" +
         "数値のみを『1.250』や『2.15』とおっしゃると、1番セルから順に自動入力されます。" +
         "特定セルを指定する場合は『5番 1.250』や『12番 測定不能』とお話しください。" +
-        "全体電圧は『トータル 48.5』で入力できます。" +
-        "銘板写真を添付した場合は、撮影されたそのままの向きと比率を保ったままExcelファイル最下部に貼り付けられます。";
+        "全体電圧は『トータル 48.5』で入力できます。";
       speak(guideText);
     });
 
@@ -802,7 +799,7 @@
             return;
           }
 
-          const isImpossible = rawText.match(/測定不能|そくていふのう|不能|ふのう|測れない|はかれない/);
+          const isImpossible = rawText.match(/測定不能|そくていふのう|不能|ふのう|測れない|hかれない/);
 
           const explicitCellNum = extractExplicitCellNumber(normalized);
           const floatMatches = normalized.match(/\d+\.\d+|\d+/g) || [];
@@ -948,13 +945,8 @@
       alert("お使いのブラウザは音声認識機能に対応していません。Google Chromeをお試しください。");
     }
 
-    // ExcelJS を使用した高度なExcelファイル出力（縦横比完全保持版）
-    document.getElementById('export-btn').addEventListener('click', async () => {
-      if (typeof ExcelJS === 'undefined') {
-        alert("Excelライブラリの読み込みに失敗しました。インターネット接続を確認してください。");
-        return;
-      }
-
+    // 共通のExcel生成ロジック
+    async function generateExcelWorkbook() {
       const stats = calculateMinMax();
       const companyNameRaw = document.getElementById('company-name').value.trim();
       const modelTypeRaw = document.getElementById('model-type').value.trim();
@@ -1145,7 +1137,6 @@
       if (uploadedImageBase64) {
         createSectionHeader(nextRow, '■ バッテリー銘板写真');
         
-        // 写真本来の縦横比を崩さず、Excel上で収まりの良い最大幅・高さをピクセル指定 (例: 最大幅 400px)
         const maxDisplayWidth = 400;
         const maxDisplayHeight = 300;
         
@@ -1168,7 +1159,6 @@
           extension: uploadedImageType,
         });
 
-        // 縦横比を維持したサイズ指定 (ext) で挿入
         worksheet.addImage(imageId, {
           tl: { col: 0.2, row: nextRow },
           ext: { width: displayWidth, height: displayHeight },
@@ -1194,11 +1184,78 @@
       const safeTiming = sanitize(measurementTiming);
 
       const fileName = `バッテリー測定結果_${safeCompany}_${safeTiming}_${safeModel}_${timestamp}.xlsx`;
-
       const buffer = await workbook.xlsx.writeBuffer();
-      saveAs(new Blob([buffer]), fileName);
 
-      speak("お疲れ様です。写真の縦横比を保持したままExcelファイルを出力しました");
+      return { buffer, fileName };
+    }
+
+    // Excelファイル出力ボタン
+    document.getElementById('export-btn').addEventListener('click', async () => {
+      if (typeof ExcelJS === 'undefined') {
+        alert("Excelライブラリの読み込みに失敗しました。インターネット接続を確認してください。");
+        return;
+      }
+
+      speak("測定結果をExcelファイルに出力します。");
+      const { buffer, fileName } = await generateExcelWorkbook();
+      saveAs(new Blob([buffer]), fileName);
+    });
+
+    // メールで送信ボタン
+    document.getElementById('email-btn').addEventListener('click', async () => {
+      if (typeof ExcelJS === 'undefined') {
+        alert("Excelライブラリの読み込みに失敗しました。インターネット接続を確認してください。");
+        return;
+      }
+
+      speak("測定結果をメールで送信します。");
+      const { buffer, fileName } = await generateExcelWorkbook();
+      const file = new File([buffer], fileName, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+      const companyName = document.getElementById('company-name').value || "未設定";
+      const modelType = document.getElementById('model-type').value || "未設定";
+      const timing = document.getElementById('measurement-timing').value;
+
+      const subject = `【バッテリー測定報告】${companyName} (${timing} / 型式: ${modelType})`;
+      const body = 
+        `関係者各位\n\n` +
+        `お疲れ様です。\n` +
+        `以下のバッテリー測定結果（Excelファイル）をお送りいたします。\n\n` +
+        `■ 会社名: ${companyName}\n` +
+        `■ 型式: ${modelType}\n` +
+        `■ 測定区分: ${timing}\n\n` +
+        `よろしくお願いいたします。`;
+
+      // Web Share API（スマホや対応ブラウザでファイル添付付きメールを起動する機能）が使える場合
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.canShare({ files: [file] });
+          await navigator.share({
+            files: [file],
+            title: subject,
+            text: body,
+          });
+          return;
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error("共有エラー:", err);
+          } else {
+            return; // ユーザーがシェアをキャンセルした場合
+          }
+        }
+      }
+
+      // フォールバック：通常ダウンロードしつつメーラー（mailto）を起動
+      saveAs(file, fileName);
+
+      const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      window.location.href = mailtoUrl;
+
+      alert(
+        `Excelファイルをダウンロードしました。\n\n` +
+        `お使いのブラウザ・環境ではメーラーへの直接ファイル添付が制限されているため、\n` +
+        `起動したメール画面に、ダウンロードされたファイル（${fileName}）を手動でドラッグ＆ドロップしてご添付ください。`
+      );
     });
   </script>
 </body>
