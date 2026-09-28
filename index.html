@@ -89,10 +89,9 @@
       border-radius: 6px;
       border: 1px solid #b6d4fe;
       display: flex;
-      gap: 12px;
+      gap: 15px;
       align-items: center;
       font-weight: bold;
-      font-size: 0.85rem;
     }
     .mode-selector label { cursor: pointer; }
 
@@ -182,16 +181,16 @@
 
     <div class="total-v-container">
       <label for="total-voltage">⚡ 全体電圧 (V):</label>
-      <input type="number" step="0.01" id="total-voltage" placeholder="48.50" onblur="formatInputDecimal(this, 2)">
+      <input type="number" step="0.01" id="total-voltage" placeholder="48.50" onchange="formatVoltageInput(this)">
       <span>V</span>
       <span style="font-size:0.8rem; font-weight:normal; color:#666;">（音声例：「トータル 48.5」）</span>
     </div>
 
     <div class="mode-selector">
       <span>入力対象:</span>
-      <label><input type="radio" name="input-target" id="radio-sg" value="sg" checked> 🧪 比重 (1.100~1.400)</label>
-      <label><input type="radio" name="input-target" id="radio-v" value="v"> ⚡ 電圧 (0.50~2.50V)</label>
-      <label><input type="radio" name="input-target" id="radio-both" value="both"> 🔄 両方</label>
+      <label><input type="radio" name="input-target" id="radio-sg" value="sg" checked> 🧪 比重モード (1.100~1.400)</label>
+      <label><input type="radio" name="input-target" id="radio-v" value="v"> ⚡ 電圧モード (0.50~2.50V)</label>
+      <label><input type="radio" name="input-target" id="radio-both" value="both"> 🔄 両方モード</label>
     </div>
     
     <div class="recognized-text">
@@ -218,13 +217,13 @@
                 <td style="font-weight:bold; background:#f9f9f9;">${i}</td>
                 <td>
                   <div style="display:flex; align-items:center; justify-content:center;">
-                    <input type="number" step="0.001" class="cell-input" id="sg-${i}" oninput="updateMinMaxHighlights()" onblur="formatInputDecimal(this, 3)">
+                    <input type="text" class="cell-input" id="sg-${i}" onchange="formatSgInput(this)" oninput="updateMinMaxHighlights()">
                     <span id="badge-sg-${i}"></span>
                   </div>
                 </td>
                 <td>
                   <div style="display:flex; align-items:center; justify-content:center;">
-                    <input type="number" step="0.01" class="cell-input" id="v-${i}" oninput="validateAndHighlightV(${i})" onblur="formatInputDecimal(this, 2)">
+                    <input type="number" step="0.01" class="cell-input" id="v-${i}" onchange="formatVoltageInput(this)" oninput="updateMinMaxHighlights()">
                     <span id="badge-v-${i}"></span>
                   </div>
                 </td>
@@ -245,39 +244,37 @@
     let isListening = false;
     let recognition = null;
 
-    // 手入力時にフォーカスが外れた際、指定桁数（比重:3位, 電圧:2位）へフォーマット
-    function formatInputDecimal(element, decimals) {
-      if (!element || element.value === "" || element.value === "測定不能") return;
-      const val = parseFloat(element.value);
-      if (!isNaN(val)) {
-        element.value = val.toFixed(decimals);
-      }
+    // フォーマット用関数（比重：小数点第3位、電圧：小数点第2位）
+    function formatSgValue(val) {
+      if (val === "測定不能" || val === "" || val === null || val === undefined) return val;
+      const num = parseFloat(val);
+      return isNaN(num) ? val : num.toFixed(3);
     }
 
-    // 電圧の手入力時の検証
-    function validateAndHighlightV(cellNum) {
-      const vInput = document.getElementById(`v-${cellNum}`);
-      const val = parseFloat(vInput.value);
-      
-      // 入力があるが範囲外（0.5V未満 または 2.5V超）の場合は警告枠を表示
-      if (!isNaN(val) && (val < 0.5 || val > 2.5)) {
-        vInput.style.borderColor = "red";
-        vInput.style.backgroundColor = "#ffe6e6";
-      } else {
-        vInput.style.borderColor = "#ccc";
-        vInput.style.backgroundColor = "#fff";
+    function formatVoltageValue(val) {
+      if (val === "" || val === null || val === undefined) return val;
+      const num = parseFloat(val);
+      return isNaN(num) ? val : num.toFixed(2);
+    }
+
+    function formatSgInput(inputElem) {
+      if (inputElem.value !== "測定不能") {
+        inputElem.value = formatSgValue(inputElem.value);
       }
+      updateMinMaxHighlights();
+    }
+
+    function formatVoltageInput(inputElem) {
+      inputElem.value = formatVoltageValue(inputElem.value);
       updateMinMaxHighlights();
     }
 
     // 音声読み上げ中のマイク一時停止制御付き speak 関数
     function speak(text, onEndCallback = null) {
       if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); // 既存の読み上げを強制停止
-        
+        window.speechSynthesis.cancel();
         isSpeaking = true;
 
-        // 読み上げ開始時に音声認識を停止させて自尊ループを防ぐ
         if (isListening && recognition) {
           try { recognition.stop(); } catch(e) {}
         }
@@ -287,7 +284,6 @@
         uttr.rate = 1.1;
 
         const handleEnd = () => {
-          // 発話が終わった後に余裕を持たせてからマイクを再開
           setTimeout(() => { 
             isSpeaking = false; 
             if (isListening && recognition) {
@@ -320,17 +316,17 @@
         const vVal = parseFloat(document.getElementById(`v-${i}`).value);
 
         if (!isNaN(sgVal) && sgRaw !== "測定不能") {
-          if (stats.sg.max !== null && Math.abs(sgVal - stats.sg.max) < 0.0001) {
+          if (stats.sg.max !== null && sgVal === stats.sg.max) {
             badgeSg.innerHTML = '<span class="badge badge-max">最高</span>';
-          } else if (stats.sg.min !== null && Math.abs(sgVal - stats.sg.min) < 0.0001) {
+          } else if (stats.sg.min !== null && sgVal === stats.sg.min) {
             badgeSg.innerHTML = '<span class="badge badge-min">最低</span>';
           }
         }
 
         if (!isNaN(vVal)) {
-          if (stats.v.max !== null && Math.abs(vVal - stats.v.max) < 0.0001) {
+          if (stats.v.max !== null && vVal === stats.v.max) {
             badgeV.innerHTML = '<span class="badge badge-max">最高</span>';
-          } else if (stats.v.min !== null && Math.abs(vVal - stats.v.min) < 0.0001) {
+          } else if (stats.v.min !== null && vVal === stats.v.min) {
             badgeV.innerHTML = '<span class="badge badge-min">最低</span>';
           }
         }
@@ -356,8 +352,8 @@
         const min = Math.min(...vals);
         const max = Math.max(...vals);
 
-        const minCells = list.filter(item => Math.abs(item.val - min) < 0.0001).map(item => item.cell);
-        const maxCells = list.filter(item => Math.abs(item.val - max) < 0.0001).map(item => item.cell);
+        const minCells = list.filter(item => item.val === min).map(item => item.cell);
+        const maxCells = list.filter(item => item.val === max).map(item => item.cell);
 
         return { min, max, minCells, maxCells };
       };
@@ -421,10 +417,7 @@
         document.getElementById('total-voltage').value = lastState.value;
       } else {
         for (const inputId in lastState.values) {
-          const inputElem = document.getElementById(inputId);
-          inputElem.value = lastState.values[inputId];
-          inputElem.style.borderColor = "#ccc";
-          inputElem.style.backgroundColor = "#fff";
+          document.getElementById(inputId).value = lastState.values[inputId];
         }
         document.querySelectorAll('tr').forEach(tr => tr.classList.remove('active-row'));
         if (lastState.activeCellNum) {
@@ -447,14 +440,17 @@
         "数値のみを『1.250』や『2.15』とおっしゃると、1番セルから順に自動入力されます。" +
         "特定セルを指定する場合は『5番 1.250』や『12番 測定不能』とお話しください。" +
         "全体電圧は『トータル 48.5』で入力できます。" +
-        "比重は1.100から1.400の範囲、電圧は0.50から2.50ボルトの範囲で受付いたします。" +
-        "直前の入力を戻したい場合は『戻す』や『違う』、入力を終了するときは『終了』とお話しください。";
+        "比重は1.100から1.400、電圧は0.50から2.50の範囲で受付いたします。" +
+        "直前の入力を戻したい場合は『戻す』または『違う』、入力を終了するときは『終了』とお話しください。";
       
       speak(guideText);
     });
 
     function normalizeSpeechText(text) {
       let t = text;
+
+      // 「あー」「えー」「うー」などの言い淀み・フィラー（雑音）を除去
+      t = t.replace(/(?:あー|あ〜|えー|え〜|うー|う〜|んー|ん〜|えっと|あのー|あの〜)/g, '');
 
       t = t.replace(/点|てん|テン|一転|回転/g, '.');
       t = t.replace(/ロック|録|六|ログ/g, '6');
@@ -482,7 +478,7 @@
       }
       
       t = t.replace(/(\d+)\s*\.\s*(\d+)/g, '$1.$2');
-      return t;
+      return t.trim();
     }
 
     function extractExplicitCellNumber(text) {
@@ -556,14 +552,17 @@
 
         const normalized = normalizeSpeechText(rawText);
 
+        // クリーニング後に文字列が空になった場合（フィラーのみの場合）は無視
+        if (!normalized) return;
+
         if (rawText.match(/トータル|全体|ぜんたい|合計|ごうけい|総電圧|全電圧/)) {
           const numMatch = normalized.match(/\d+\.\d+|\d+/);
           if (numMatch) {
-            const totalVal = parseFloat(numMatch[0]).toFixed(2);
+            const formattedVal = formatVoltageValue(numMatch[0]);
             const prevVal = document.getElementById('total-voltage').value;
             historyStack.push({ type: 'total-voltage', value: prevVal });
-            document.getElementById('total-voltage').value = totalVal;
-            speak(`全体電圧、${totalVal}ボルト`);
+            document.getElementById('total-voltage').value = formattedVal;
+            speak(`全体電圧、${formattedVal}ボルト`);
             clearPendingCell();
             return;
           }
@@ -657,10 +656,10 @@
           }
         }
 
-        // 電圧モード時の範囲チェック (0.50 ~ 2.50V または "測定不能")
-        if (currentMode === 'v' && val !== "測定不能") {
+        // 電圧モード時の範囲チェック (0.50 ~ 2.50V)
+        if (currentMode === 'v') {
           const numVal = parseFloat(val);
-          if (isNaN(numVal) || numVal < 0.5 || numVal > 2.5) {
+          if (isNaN(numVal) || numVal < 0.50 || numVal > 2.50) {
             speak("電圧の範囲外です");
             return;
           }
@@ -679,15 +678,12 @@
         let formattedVal = val;
 
         if (currentMode === 'sg') {
-          if (val !== "測定不能") formattedVal = parseFloat(val).toFixed(3);
+          formattedVal = formatSgValue(val);
           document.getElementById(`sg-${cellNum}`).value = formattedVal;
           updated = true;
         } else if (currentMode === 'v') {
-          if (val !== "測定不能") formattedVal = parseFloat(val).toFixed(2);
-          const vInput = document.getElementById(`v-${cellNum}`);
-          vInput.value = formattedVal;
-          vInput.style.borderColor = "#ccc";
-          vInput.style.backgroundColor = "#fff";
+          formattedVal = formatVoltageValue(val);
+          document.getElementById(`v-${cellNum}`).value = formattedVal;
           updated = true;
         } else if (currentMode === 'both') {
           if (val === "測定不能") {
@@ -696,19 +692,13 @@
           } else {
             const numVal = parseFloat(val);
             if (!isNaN(numVal) && numVal >= 1.100 && numVal <= 1.400) {
-              formattedVal = numVal.toFixed(3);
+              formattedVal = formatSgValue(val);
               document.getElementById(`sg-${cellNum}`).value = formattedVal;
               updated = true;
-            } else if (!isNaN(numVal) && numVal >= 0.5 && numVal <= 2.5) {
-              formattedVal = numVal.toFixed(2);
-              const vInput = document.getElementById(`v-${cellNum}`);
-              vInput.value = formattedVal;
-              vInput.style.borderColor = "#ccc";
-              vInput.style.backgroundColor = "#fff";
+            } else if (!isNaN(numVal) && numVal >= 0.50 && numVal <= 2.50) {
+              formattedVal = formatVoltageValue(val);
+              document.getElementById(`v-${cellNum}`).value = formattedVal;
               updated = true;
-            } else {
-              speak("入力範囲外です");
-              return;
             }
           }
         }
@@ -767,15 +757,12 @@
       const batteryType = document.getElementById('battery-type').value || "-";
       const batteryCapacity = document.getElementById('battery-capacity').value || "-";
       const mfgNumber = document.getElementById('mfg-number').value || "-";
-      
-      const totalVRaw = document.getElementById('total-voltage').value;
-      const totalVVal = parseFloat(totalVRaw);
-      const totalV = !isNaN(totalVVal) ? totalVVal : (totalVRaw || "-");
+      const totalV = formatVoltageValue(document.getElementById('total-voltage').value) || "-";
 
-      const sgMinStr = stats.sg.min !== null ? `${stats.sg.min.toFixed(3)} (${stats.sg.minCells.map(c=>c+'番').join('&')})` : "-";
-      const sgMaxStr = stats.sg.max !== null ? `${stats.sg.max.toFixed(3)} (${stats.sg.maxCells.map(c=>c+'番').join('&')})` : "-";
-      const vMinStr  = stats.v.min  !== null ? `${stats.v.min.toFixed(2)} (${stats.v.minCells.map(c=>c+'番').join('&')})`  : "-";
-      const vMaxStr  = stats.v.max  !== null ? `${stats.v.max.toFixed(2)} (${stats.v.maxCells.map(c=>c+'番').join('&')})`  : "-";
+      const sgMinStr = stats.sg.min !== null ? `${formatSgValue(stats.sg.min)} (${stats.sg.minCells.map(c=>c+'番').join('&')})` : "-";
+      const sgMaxStr = stats.sg.max !== null ? `${formatSgValue(stats.sg.max)} (${stats.sg.maxCells.map(c=>c+'番').join('&')})` : "-";
+      const vMinStr  = stats.v.min  !== null ? `${formatVoltageValue(stats.v.min)} (${stats.v.minCells.map(c=>c+'番').join('&')})`  : "-";
+      const vMaxStr  = stats.v.max  !== null ? `${formatVoltageValue(stats.v.max)} (${stats.v.maxCells.map(c=>c+'番').join('&')})`  : "-";
 
       // スタイル定義
       const thinBorder = {
@@ -819,7 +806,6 @@
         alignment: { horizontal: "center", vertical: "center" }
       };
 
-      // 標準スタイル（比重用: 0.000, 電圧用: 0.00）
       const styleNormalSg = {
         font: { size: 9, color: { rgb: "000000" } },
         border: thinBorder,
@@ -890,7 +876,7 @@
 
       // 全体情報
       wsData.push([{ v: "■ 全体情報", s: styleTitle }, { v: "", s: styleTitle }]);
-      wsData.push([{ v: "全体電圧 (V)", s: styleRowLabel }, typeof totalV === 'number' ? { v: totalV, s: styleNormalV, t: "n" } : { v: totalV, s: styleNormalLeft }]);
+      wsData.push([{ v: "全体電圧 (V)", s: styleRowLabel }, { v: totalV !== "-" ? parseFloat(totalV) : "-", s: styleNormalV, t: totalV !== "-" ? "n" : "s" }]);
       wsData.push([{ v: "比重 最低値", s: styleRowLabel }, { v: sgMinStr, s: styleMinSg }]);
       wsData.push([{ v: "比重 最高値", s: styleRowLabel }, { v: sgMaxStr, s: styleMaxSg }]);
       wsData.push([{ v: "電圧 最低値", s: styleRowLabel }, { v: vMinStr, s: styleMinV }]);
@@ -914,11 +900,11 @@
           const val = parseFloat(rawVal);
           let cellStyle = styleNormalSg;
           if (rawVal === "測定不能") {
-            sgRow.push({ v: "測定不能", s: styleNormalLeft, t: "s" });
+            sgRow.push({ v: "測定不能", s: styleNormalSg, t: "s" });
           } else {
             if (!isNaN(val)) {
-              if (stats.sg.max !== null && Math.abs(val - stats.sg.max) < 0.0001) cellStyle = styleMaxSg;
-              else if (stats.sg.min !== null && Math.abs(val - stats.sg.min) < 0.0001) cellStyle = styleMinSg;
+              if (stats.sg.max !== null && val === stats.sg.max) cellStyle = styleMaxSg;
+              else if (stats.sg.min !== null && val === stats.sg.min) cellStyle = styleMinSg;
             }
             sgRow.push({ v: rawVal !== "" ? val : "", s: cellStyle, t: rawVal !== "" ? "n" : "s" });
           }
@@ -931,8 +917,8 @@
           const val = parseFloat(rawVal);
           let cellStyle = styleNormalV;
           if (!isNaN(val)) {
-            if (stats.v.max !== null && Math.abs(val - stats.v.max) < 0.0001) cellStyle = styleMaxV;
-            else if (stats.v.min !== null && Math.abs(val - stats.v.min) < 0.0001) cellStyle = styleMinV;
+            if (stats.v.max !== null && val === stats.v.max) cellStyle = styleMaxV;
+            else if (stats.v.min !== null && val === stats.v.min) cellStyle = styleMinV;
           }
           vRow.push({ v: rawVal !== "" ? val : "", s: cellStyle, t: rawVal !== "" ? "n" : "s" });
         }
@@ -951,9 +937,9 @@
         { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } }
       ];
 
-      // 列幅の調整
+      // 列幅の調整（A4縦1ページに収まる幅）
       const cols = [{ wch: 14 }];
-      for (let i = 1; i <= 12; i++) cols.push({ wch: 6.5 });
+      for (let i = 1; i <= 12; i++) cols.push({ wch: 5.5 });
       ws['!cols'] = cols;
 
       // 行高の調整
