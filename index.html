@@ -89,9 +89,10 @@
       border-radius: 6px;
       border: 1px solid #b6d4fe;
       display: flex;
-      gap: 15px;
+      gap: 12px;
       align-items: center;
       font-weight: bold;
+      font-size: 0.85rem;
     }
     .mode-selector label { cursor: pointer; }
 
@@ -188,9 +189,9 @@
 
     <div class="mode-selector">
       <span>入力対象:</span>
-      <label><input type="radio" name="input-target" id="radio-sg" value="sg" checked> 🧪 比重モード (1.100~1.400)</label>
-      <label><input type="radio" name="input-target" id="radio-v" value="v"> ⚡ 電圧モード</label>
-      <label><input type="radio" name="input-target" id="radio-both" value="both"> 🔄 両方モード</label>
+      <label><input type="radio" name="input-target" id="radio-sg" value="sg" checked> 🧪 比重 (1.100~1.400)</label>
+      <label><input type="radio" name="input-target" id="radio-v" value="v"> ⚡ 電圧 (0.50~2.50V)</label>
+      <label><input type="radio" name="input-target" id="radio-both" value="both"> 🔄 両方</label>
     </div>
     
     <div class="recognized-text">
@@ -223,7 +224,7 @@
                 </td>
                 <td>
                   <div style="display:flex; align-items:center; justify-content:center;">
-                    <input type="number" step="0.01" class="cell-input" id="v-${i}" oninput="updateMinMaxHighlights()">
+                    <input type="number" step="0.01" class="cell-input" id="v-${i}" oninput="validateAndHighlightV(${i})">
                     <span id="badge-v-${i}"></span>
                   </div>
                 </td>
@@ -243,6 +244,22 @@
     let isSpeaking = false;
     let isListening = false;
     let recognition = null;
+
+    // 電圧の手入力時の検証
+    function validateAndHighlightV(cellNum) {
+      const vInput = document.getElementById(`v-${cellNum}`);
+      const val = parseFloat(vInput.value);
+      
+      // 入力があるが範囲外（0.5V未満 または 2.5V超）の場合は警告枠を表示
+      if (!isNaN(val) && (val < 0.5 || val > 2.5)) {
+        vInput.style.borderColor = "red";
+        vInput.style.backgroundColor = "#ffe6e6";
+      } else {
+        vInput.style.borderColor = "#ccc";
+        vInput.style.backgroundColor = "#fff";
+      }
+      updateMinMaxHighlights();
+    }
 
     // 音声読み上げ中のマイク一時停止制御付き speak 関数
     function speak(text, onEndCallback = null) {
@@ -395,7 +412,10 @@
         document.getElementById('total-voltage').value = lastState.value;
       } else {
         for (const inputId in lastState.values) {
-          document.getElementById(inputId).value = lastState.values[inputId];
+          const inputElem = document.getElementById(inputId);
+          inputElem.value = lastState.values[inputId];
+          inputElem.style.borderColor = "#ccc";
+          inputElem.style.backgroundColor = "#fff";
         }
         document.querySelectorAll('tr').forEach(tr => tr.classList.remove('active-row'));
         if (lastState.activeCellNum) {
@@ -418,7 +438,7 @@
         "数値のみを『1.250』や『2.15』とおっしゃると、1番セルから順に自動入力されます。" +
         "特定セルを指定する場合は『5番 1.250』や『12番 測定不能』とお話しください。" +
         "全体電圧は『トータル 48.5』で入力できます。" +
-        "比重は1.100から1.400の範囲で受付いたします。" +
+        "比重は1.100から1.400の範囲、電圧は0.50から2.50ボルトの範囲で受付いたします。" +
         "直前の入力を戻したい場合は『戻す』、入力を終了するときは『終了』とお話しください。";
       
       speak(guideText);
@@ -630,6 +650,15 @@
           }
         }
 
+        // 電圧モード時の範囲チェック (0.50 ~ 2.50V または "測定不能")
+        if (currentMode === 'v' && val !== "測定不能") {
+          const numVal = parseFloat(val);
+          if (isNaN(numVal) || numVal < 0.5 || numVal > 2.5) {
+            speak("電圧の範囲外です");
+            return;
+          }
+        }
+
         const previousState = {
           type: 'cell',
           activeCellNum: currentAutoCellNum,
@@ -645,7 +674,10 @@
           document.getElementById(`sg-${cellNum}`).value = val;
           updated = true;
         } else if (currentMode === 'v') {
-          document.getElementById(`v-${cellNum}`).value = val;
+          const vInput = document.getElementById(`v-${cellNum}`);
+          vInput.value = val;
+          vInput.style.borderColor = "#ccc";
+          vInput.style.backgroundColor = "#fff";
           updated = true;
         } else if (currentMode === 'both') {
           if (val === "測定不能") {
@@ -656,9 +688,15 @@
             if (!isNaN(numVal) && numVal >= 1.100 && numVal <= 1.400) {
               document.getElementById(`sg-${cellNum}`).value = val;
               updated = true;
-            } else if (!isNaN(numVal) && numVal >= 1.5) {
-              document.getElementById(`v-${cellNum}`).value = val;
+            } else if (!isNaN(numVal) && numVal >= 0.5 && numVal <= 2.5) {
+              const vInput = document.getElementById(`v-${cellNum}`);
+              vInput.value = val;
+              vInput.style.borderColor = "#ccc";
+              vInput.style.backgroundColor = "#fff";
               updated = true;
+            } else {
+              speak("入力範囲外です");
+              return;
             }
           }
         }
