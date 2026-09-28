@@ -413,7 +413,9 @@
       }
       const lastState = historyStack.pop();
 
-      if (lastState.type === 'total-voltage') {
+      if (lastState.type === 'input-field') {
+        document.getElementById(lastState.id).value = lastState.value;
+      } else if (lastState.type === 'total-voltage') {
         document.getElementById('total-voltage').value = lastState.value;
       } else {
         for (const inputId in lastState.values) {
@@ -437,6 +439,7 @@
     document.getElementById('guide-btn').addEventListener('click', () => {
       const guideText = 
         "音声入力の使い方を説明します。" +
+        "基本情報は『会社名 トヨタ』『型式 EB100』『充電前』などの発話で設定できます。" +
         "数値のみを『1.250』や『2.15』とおっしゃると、1番セルから順に自動入力されます。" +
         "特定セルを指定する場合は『5番 1.250』や『12番 測定不能』とお話しください。" +
         "全体電圧は『トータル 48.5』で入力できます。" +
@@ -449,7 +452,7 @@
     function normalizeSpeechText(text) {
       let t = text;
 
-      // 「あー」「えー」「うー」などの言い淀み・フィラー（雑音）を除去
+      // フィラー（言い淀み・雑音）を除去
       t = t.replace(/(?:あー|あ〜|えー|え〜|うー|う〜|んー|ん〜|えっと|あのー|あの〜)/g, '');
 
       t = t.replace(/点|てん|テン|一転|回転/g, '.');
@@ -551,10 +554,99 @@
         }
 
         const normalized = normalizeSpeechText(rawText);
-
-        // クリーニング後に文字列が空になった場合（フィラーのみの場合）は無視
         if (!normalized) return;
 
+        // --- 基本情報の音声入力判定 ---
+        // 1. 会社名
+        if (rawText.match(/会社名|会社|かいしゃめい|かいしゃ/)) {
+          const val = rawText.replace(/^.*?(?:会社名|会社|かいしゃめい|かいしゃ)\s*/, '').trim();
+          if (val) {
+            const prevVal = document.getElementById('company-name').value;
+            historyStack.push({ type: 'input-field', id: 'company-name', value: prevVal });
+            document.getElementById('company-name').value = val;
+            speak(`会社名、${val}`);
+            return;
+          }
+        }
+
+        // 2. バッテリー型式 (※「型式」より先に判定)
+        if (rawText.match(/バッテリー型式|バッテリーのかたしき|バッテリータイプ/)) {
+          const val = normalized.replace(/^.*?(?:バッテリー型式|バッテリーのかたしき|バッテリータイプ)\s*/, '').trim();
+          if (val) {
+            const prevVal = document.getElementById('battery-type').value;
+            historyStack.push({ type: 'input-field', id: 'battery-type', value: prevVal });
+            document.getElementById('battery-type').value = val;
+            speak(`バッテリー型式、${val}`);
+            return;
+          }
+        }
+
+        // 3. 型式
+        if (rawText.match(/型式|かたしき|モデル/)) {
+          const val = normalized.replace(/^.*?(?:型式|かたしき|モデル)\s*/, '').trim();
+          if (val) {
+            const prevVal = document.getElementById('model-type').value;
+            historyStack.push({ type: 'input-field', id: 'model-type', value: prevVal });
+            document.getElementById('model-type').value = val;
+            speak(`型式、${val}`);
+            return;
+          }
+        }
+
+        // 4. バッテリー容量
+        if (rawText.match(/バッテリー容量|容量|ようりょう/)) {
+          const val = normalized.replace(/^.*?(?:バッテリー容量|容量|ようりょう)\s*/, '').trim();
+          if (val) {
+            const prevVal = document.getElementById('battery-capacity').value;
+            historyStack.push({ type: 'input-field', id: 'battery-capacity', value: prevVal });
+            document.getElementById('battery-capacity').value = val;
+            speak(`バッテリー容量、${val}`);
+            return;
+          }
+        }
+
+        // 5. MFG No.
+        if (rawText.match(/MFG|エムエフジー|製造番号|シリアル/i)) {
+          const val = normalized.replace(/^.*?(?:MFG|エムエフジー|製造番号|シリアル)\s*(?:ナンバー|No|no)?\s*/i, '').trim();
+          if (val) {
+            const prevVal = document.getElementById('mfg-number').value;
+            historyStack.push({ type: 'input-field', id: 'mfg-number', value: prevVal });
+            document.getElementById('mfg-number').value = val;
+            speak(`エムエフジーナンバー、${val}`);
+            return;
+          }
+        }
+
+        // 6. 測定区分
+        if (rawText.match(/測定区分|区分|そくていくぶん/)) {
+          let selectedTiming = "";
+          if (rawText.match(/充電前|じゅうでんまえ/)) selectedTiming = "充電前";
+          else if (rawText.match(/充電後|じゅうでんご/)) selectedTiming = "充電後";
+          else if (rawText.match(/現地年次|年次|ねんじ/)) selectedTiming = "現地年次";
+
+          if (selectedTiming) {
+            const prevVal = document.getElementById('measurement-timing').value;
+            historyStack.push({ type: 'input-field', id: 'measurement-timing', value: prevVal });
+            document.getElementById('measurement-timing').value = selectedTiming;
+            speak(`測定区分、${selectedTiming}`);
+            return;
+          }
+        } else if (rawText.match(/充電前|充電後|現地年次/)) {
+          let selectedTiming = "";
+          if (rawText.match(/充電前/)) selectedTiming = "充電前";
+          else if (rawText.match(/充電後/)) selectedTiming = "充電後";
+          else if (rawText.match(/現地年次/)) selectedTiming = "現地年次";
+
+          if (selectedTiming) {
+            const prevVal = document.getElementById('measurement-timing').value;
+            historyStack.push({ type: 'input-field', id: 'measurement-timing', value: prevVal });
+            document.getElementById('measurement-timing').value = selectedTiming;
+            speak(`測定区分、${selectedTiming}`);
+            return;
+          }
+        }
+
+        // --- 全体電圧・モード・セル入力の判定 ---
         if (rawText.match(/トータル|全体|ぜんたい|合計|ごうけい|総電圧|全電圧/)) {
           const numMatch = normalized.match(/\d+\.\d+|\d+/);
           if (numMatch) {
