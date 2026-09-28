@@ -20,6 +20,17 @@
       flex-direction: column;
       gap: 10px;
     }
+    .info-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+    .info-header h2 {
+      font-size: 1.05rem;
+      margin: 0;
+      color: #333;
+    }
     .info-group {
       display: flex;
       align-items: center;
@@ -56,6 +67,8 @@
       z-index: 10;
     }
     button { font-size: 0.95rem; padding: 8px 14px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; }
+    #info-mic-btn { background-color: #673AB7; color: white; border: none; }
+    #info-mic-btn.listening { background-color: #f44336; }
     #start-btn { background-color: #4CAF50; color: white; border: none; }
     #start-btn.listening { background-color: #f44336; }
     #guide-btn { background-color: #0288d1; color: white; border: none; }
@@ -142,6 +155,10 @@
 
   <!-- 基本情報エリア -->
   <div class="company-info-container">
+    <div class="info-header">
+      <h2>📋 基本情報</h2>
+      <button id="info-mic-btn">🎤 基本情報入力</button>
+    </div>
     <div class="info-group">
       <label for="company-name">会社名:</label>
       <input type="text" id="company-name" placeholder="例: 〇〇産業株式会社">
@@ -173,7 +190,7 @@
   </div>
 
   <div class="controls">
-    <button id="start-btn">🎤 音声入力 開始</button>
+    <button id="start-btn">🎤 数値入力 開始</button>
     <button id="guide-btn">❓ 音声ガイド</button>
     <button id="undo-btn">↩️ 1つ戻す</button>
     <button id="export-btn">📊 Excelファイル（.xlsx）出力</button>
@@ -241,7 +258,9 @@
     let pendingTimer = null;
     let currentAutoCellNum = 1;
     let isSpeaking = false;
-    let isListening = false;
+
+    // 音声モード: null（停止）, 'info'（基本情報）, 'cell'（セル数値入力）
+    let activeListenMode = null; 
     let recognition = null;
 
     // フォーマット用関数（比重：小数点第3位、電圧：小数点第2位）
@@ -275,7 +294,7 @@
         window.speechSynthesis.cancel();
         isSpeaking = true;
 
-        if (isListening && recognition) {
+        if (activeListenMode && recognition) {
           try { recognition.stop(); } catch(e) {}
         }
 
@@ -286,7 +305,7 @@
         const handleEnd = () => {
           setTimeout(() => { 
             isSpeaking = false; 
-            if (isListening && recognition) {
+            if (activeListenMode && recognition) {
               try { recognition.start(); } catch(e) {}
             }
             if (onEndCallback) onEndCallback();
@@ -439,12 +458,12 @@
     document.getElementById('guide-btn').addEventListener('click', () => {
       const guideText = 
         "音声入力の使い方を説明します。" +
-        "基本情報は『会社名 トヨタ』『型式 EB100』『充電前』などの発話で設定できます。" +
+        "基本情報は右上『基本情報入力』ボタンを押し『会社名 トヨタ』『型式 EB100』『充電前』のようにお話しください。" +
+        "セル数値の入力は『数値入力 開始』ボタンを押します。" +
         "数値のみを『1.250』や『2.15』とおっしゃると、1番セルから順に自動入力されます。" +
         "特定セルを指定する場合は『5番 1.250』や『12番 測定不能』とお話しください。" +
         "全体電圧は『トータル 48.5』で入力できます。" +
-        "比重は1.100から1.400、電圧は0.50から2.50の範囲で受付いたします。" +
-        "直前の入力を戻したい場合は『戻す』または『違う』、入力を終了するときは『終了』とお話しください。";
+        "直前の入力を戻したい場合は『戻す』、入力を終了するときは『終了』とお話しください。";
       
       speak(guideText);
     });
@@ -502,43 +521,63 @@
       recognition.interimResults = false;
 
       const startBtn = document.getElementById('start-btn');
+      const infoMicBtn = document.getElementById('info-mic-btn');
       const status = document.getElementById('status');
       const lastSpeech = document.getElementById('last-speech');
 
       function stopListening() {
-        isListening = false;
+        activeListenMode = null;
         try { recognition.stop(); } catch(e) {}
+        
         status.textContent = "停止中";
         status.style.color = "#555";
-        startBtn.textContent = "🎤 音声入力 開始";
-        startBtn.classList.remove('listening');
-        clearPendingCell();
-        speak("音声入力を終了します");
-      }
-
-      function startListening() {
-        isListening = true;
-        status.textContent = "準備中...";
-        status.style.color = "#ff9800";
-        startBtn.textContent = "⌛ 起動中...";
         
-        speak("音声入力を開始します", () => {
-          try {
-            recognition.start();
-            status.textContent = "音声認識中...";
-            status.style.color = "green";
-            startBtn.textContent = "⏹️ 音声入力 停止";
-            startBtn.classList.add('listening');
-          } catch (e) {
-            console.error("開始エラー:", e);
-          }
-        });
+        startBtn.textContent = "🎤 数値入力 開始";
+        startBtn.classList.remove('listening');
+        
+        infoMicBtn.textContent = "🎤 基本情報入力";
+        infoMicBtn.classList.remove('listening');
+
+        clearPendingCell();
       }
 
-      startBtn.addEventListener('click', () => {
-        if (!isListening) startListening();
-        else stopListening();
-      });
+      function startListeningMode(mode) {
+        if (activeListenMode === mode) {
+          stopListening();
+          speak("音声入力を終了します");
+          return;
+        }
+
+        stopListening();
+        activeListenMode = mode;
+
+        if (mode === 'info') {
+          infoMicBtn.textContent = "⌛ 起動中...";
+          speak("基本情報の音声入力を開始します", () => {
+            try {
+              recognition.start();
+              status.textContent = "基本情報 認識中...";
+              status.style.color = "#673AB7";
+              infoMicBtn.textContent = "⏹️ 登録終了";
+              infoMicBtn.classList.add('listening');
+            } catch (e) { console.error(e); }
+          });
+        } else if (mode === 'cell') {
+          startBtn.textContent = "⌛ 起動中...";
+          speak("セル数値の音声入力を開始します", () => {
+            try {
+              recognition.start();
+              status.textContent = "セル数値 認識中...";
+              status.style.color = "green";
+              startBtn.textContent = "⏹️ 数値入力 停止";
+              startBtn.classList.add('listening');
+            } catch (e) { console.error(e); }
+          });
+        }
+      }
+
+      startBtn.addEventListener('click', () => startListeningMode('cell'));
+      infoMicBtn.addEventListener('click', () => startListeningMode('info'));
 
       recognition.onresult = (event) => {
         if (isSpeaking) return;
@@ -550,187 +589,176 @@
 
         if (rawText.match(/終了|しゅうりょう|停止|ていし|おわり|終わり/)) {
           stopListening();
+          speak("音声入力を終了します");
           return;
         }
 
         const normalized = normalizeSpeechText(rawText);
         if (!normalized) return;
 
-        // --- 基本情報の音声入力判定 ---
-        // 1. 会社名
-        if (rawText.match(/会社名|会社|かいしゃめい|かいしゃ/)) {
-          const val = rawText.replace(/^.*?(?:会社名|会社|かいしゃめい|かいしゃ)\s*/, '').trim();
-          if (val) {
-            const prevVal = document.getElementById('company-name').value;
-            historyStack.push({ type: 'input-field', id: 'company-name', value: prevVal });
-            document.getElementById('company-name').value = val;
-            speak(`会社名、${val}`);
-            return;
-          }
-        }
+        // ==========================================
+        // モード 1: 基本情報入力専用処理
+        // ==========================================
+        if (activeListenMode === 'info') {
+          let registeredCount = 0;
 
-        // 2. バッテリー型式 (※「型式」より先に判定)
-        if (rawText.match(/バッテリー型式|バッテリーのかたしき|バッテリータイプ/)) {
-          const val = normalized.replace(/^.*?(?:バッテリー型式|バッテリーのかたしき|バッテリータイプ)\s*/, '').trim();
-          if (val) {
-            const prevVal = document.getElementById('battery-type').value;
-            historyStack.push({ type: 'input-field', id: 'battery-type', value: prevVal });
-            document.getElementById('battery-type').value = val;
-            speak(`バッテリー型式、${val}`);
-            return;
-          }
-        }
-
-        // 3. 型式
-        if (rawText.match(/型式|かたしき|モデル/)) {
-          const val = normalized.replace(/^.*?(?:型式|かたしき|モデル)\s*/, '').trim();
-          if (val) {
-            const prevVal = document.getElementById('model-type').value;
-            historyStack.push({ type: 'input-field', id: 'model-type', value: prevVal });
-            document.getElementById('model-type').value = val;
-            speak(`型式、${val}`);
-            return;
-          }
-        }
-
-        // 4. バッテリー容量
-        if (rawText.match(/バッテリー容量|容量|ようりょう/)) {
-          const val = normalized.replace(/^.*?(?:バッテリー容量|容量|ようりょう)\s*/, '').trim();
-          if (val) {
-            const prevVal = document.getElementById('battery-capacity').value;
-            historyStack.push({ type: 'input-field', id: 'battery-capacity', value: prevVal });
-            document.getElementById('battery-capacity').value = val;
-            speak(`バッテリー容量、${val}`);
-            return;
-          }
-        }
-
-        // 5. MFG No.
-        if (rawText.match(/MFG|エムエフジー|製造番号|シリアル/i)) {
-          const val = normalized.replace(/^.*?(?:MFG|エムエフジー|製造番号|シリアル)\s*(?:ナンバー|No|no)?\s*/i, '').trim();
-          if (val) {
-            const prevVal = document.getElementById('mfg-number').value;
-            historyStack.push({ type: 'input-field', id: 'mfg-number', value: prevVal });
-            document.getElementById('mfg-number').value = val;
-            speak(`エムエフジーナンバー、${val}`);
-            return;
-          }
-        }
-
-        // 6. 測定区分
-        if (rawText.match(/測定区分|区分|そくていくぶん/)) {
-          let selectedTiming = "";
-          if (rawText.match(/充電前|じゅうでんまえ/)) selectedTiming = "充電前";
-          else if (rawText.match(/充電後|じゅうでんご/)) selectedTiming = "充電後";
-          else if (rawText.match(/現地年次|年次|ねんじ/)) selectedTiming = "現地年次";
-
-          if (selectedTiming) {
-            const prevVal = document.getElementById('measurement-timing').value;
-            historyStack.push({ type: 'input-field', id: 'measurement-timing', value: prevVal });
-            document.getElementById('measurement-timing').value = selectedTiming;
-            speak(`測定区分、${selectedTiming}`);
-            return;
-          }
-        } else if (rawText.match(/充電前|充電後|現地年次/)) {
-          let selectedTiming = "";
-          if (rawText.match(/充電前/)) selectedTiming = "充電前";
-          else if (rawText.match(/充電後/)) selectedTiming = "充電後";
-          else if (rawText.match(/現地年次/)) selectedTiming = "現地年次";
-
-          if (selectedTiming) {
-            const prevVal = document.getElementById('measurement-timing').value;
-            historyStack.push({ type: 'input-field', id: 'measurement-timing', value: prevVal });
-            document.getElementById('measurement-timing').value = selectedTiming;
-            speak(`測定区分、${selectedTiming}`);
-            return;
-          }
-        }
-
-        // --- 全体電圧・モード・セル入力の判定 ---
-        if (rawText.match(/トータル|全体|ぜんたい|合計|ごうけい|総電圧|全電圧/)) {
-          const numMatch = normalized.match(/\d+\.\d+|\d+/);
-          if (numMatch) {
-            const formattedVal = formatVoltageValue(numMatch[0]);
-            const prevVal = document.getElementById('total-voltage').value;
-            historyStack.push({ type: 'total-voltage', value: prevVal });
-            document.getElementById('total-voltage').value = formattedVal;
-            speak(`全体電圧、${formattedVal}ボルト`);
-            clearPendingCell();
-            return;
-          }
-        }
-
-        if (rawText.match(/比重|ひじゅう/)) {
-          if (!rawText.match(/\d+/) || rawText.match(/モード|測り/)) {
-            setMode('sg');
-            clearPendingCell();
-            return;
-          }
-        }
-        if (rawText.match(/電圧|でんあつ/)) {
-          if (!rawText.match(/\d+/) || rawText.match(/モード|測り/)) {
-            setMode('v');
-            clearPendingCell();
-            return;
-          }
-        }
-
-        if (rawText.match(/戻す|もどす|やり直し|キャンセル|違う|ちがう/)) {
-          undoLastAction();
-          return;
-        }
-        if (rawText.match(/クリア|消す|消去/)) {
-          clearPendingCell();
-          speak("選択を解除しました");
-          return;
-        }
-
-        const isImpossible = rawText.match(/測定不能|そくていふのう|不能|ふのう|測れない|はかれない/);
-
-        const explicitCellNum = extractExplicitCellNumber(normalized);
-        const floatMatches = normalized.match(/\d+\.\d+|\d+/g) || [];
-
-        if (explicitCellNum !== null) {
-          if (isImpossible) {
-            applyValueToCell(explicitCellNum, "測定不能");
-            return;
-          }
-
-          let valueStr = null;
-          for (let n of floatMatches) {
-            if (n !== String(explicitCellNum)) {
-              valueStr = n;
-              break;
+          // 1. 会社名
+          if (rawText.match(/会社名|会社|かいしゃめい|かいしゃ/)) {
+            const val = rawText.replace(/^.*?(?:会社名|会社|かいしゃめい|かいしゃ)\s*/, '').replace(/(?:型式|モデル|バッテリー|容量|MFG|製造|測定|区分|充電).*$/, '').trim();
+            if (val) {
+              document.getElementById('company-name').value = val;
+              registeredCount++;
             }
           }
 
-          if (valueStr !== null) {
-            applyValueToCell(explicitCellNum, valueStr);
+          // 2. バッテリー型式 (※「型式」より先に判定)
+          if (rawText.match(/バッテリー型式|バッテリーのかたしき|バッテリータイプ/)) {
+            const val = normalized.replace(/^.*?(?:バッテリー型式|バッテリーのかたしき|バッテリータイプ)\s*/, '').replace(/(?:型式|モデル|容量|MFG|製造|測定|区分|充電).*$/, '').trim();
+            if (val) {
+              document.getElementById('battery-type').value = val;
+              registeredCount++;
+            }
+          }
+
+          // 3. 型式
+          if (rawText.match(/(?:^|[^バッテリー])(?:型式|かたしき|モデル)/)) {
+            const val = normalized.replace(/^.*?(?:型式|かたしき|モデル)\s*/, '').replace(/(?:バッテリー|容量|MFG|製造|測定|区分|充電).*$/, '').trim();
+            if (val) {
+              document.getElementById('model-type').value = val;
+              registeredCount++;
+            }
+          }
+
+          // 4. バッテリー容量
+          if (rawText.match(/バッテリー容量|容量|ようりょう/)) {
+            const val = normalized.replace(/^.*?(?:バッテリー容量|容量|ようりょう)\s*/, '').replace(/(?:MFG|製造|測定|区分|充電).*$/, '').trim();
+            if (val) {
+              document.getElementById('battery-capacity').value = val;
+              registeredCount++;
+            }
+          }
+
+          // 5. MFG No.
+          if (rawText.match(/MFG|エムエフジー|製造番号|シリアル/i)) {
+            const val = normalized.replace(/^.*?(?:MFG|エムエフジー|製造番号|シリアル)\s*(?:ナンバー|No|no)?\s*/i, '').replace(/(?:測定|区分|充電).*$/, '').trim();
+            if (val) {
+              document.getElementById('mfg-number').value = val;
+              registeredCount++;
+            }
+          }
+
+          // 6. 測定区分
+          if (rawText.match(/充電前|充電後|現地年次|年次/)) {
+            let selectedTiming = "";
+            if (rawText.match(/充電前/)) selectedTiming = "充電前";
+            else if (rawText.match(/充電後/)) selectedTiming = "充電後";
+            else if (rawText.match(/現地年次|年次/)) selectedTiming = "現地年次";
+
+            if (selectedTiming) {
+              document.getElementById('measurement-timing').value = selectedTiming;
+              registeredCount++;
+            }
+          }
+
+          if (registeredCount > 0) {
+            speak("基本情報を登録しました");
+            stopListening();
           } else {
-            setPendingCell(explicitCellNum);
-            speak(`${explicitCellNum}番`);
+            speak("基本情報を認識できませんでした。もう一度お試しください");
           }
           return;
         }
 
-        if (pendingCellNum) {
+        // ==========================================
+        // モード 2: セル数値入力専用処理
+        // ==========================================
+        if (activeListenMode === 'cell') {
+          // 全体電圧・モード・セル入力の判定
+          if (rawText.match(/トータル|全体|ぜんたい|合計|ごうけい|総電圧|全電圧/)) {
+            const numMatch = normalized.match(/\d+\.\d+|\d+/);
+            if (numMatch) {
+              const formattedVal = formatVoltageValue(numMatch[0]);
+              const prevVal = document.getElementById('total-voltage').value;
+              historyStack.push({ type: 'total-voltage', value: prevVal });
+              document.getElementById('total-voltage').value = formattedVal;
+              speak(`全体電圧、${formattedVal}ボルト`);
+              clearPendingCell();
+              return;
+            }
+          }
+
+          if (rawText.match(/比重|ひじゅう/)) {
+            if (!rawText.match(/\d+/) || rawText.match(/モード|測り/)) {
+              setMode('sg');
+              clearPendingCell();
+              return;
+            }
+          }
+          if (rawText.match(/電圧|でんあつ/)) {
+            if (!rawText.match(/\d+/) || rawText.match(/モード|測り/)) {
+              setMode('v');
+              clearPendingCell();
+              return;
+            }
+          }
+
+          if (rawText.match(/戻す|もどす|やり直し|キャンセル|違う|ちがう/)) {
+            undoLastAction();
+            return;
+          }
+          if (rawText.match(/クリア|消す|消去/)) {
+            clearPendingCell();
+            speak("選択を解除しました");
+            return;
+          }
+
+          const isImpossible = rawText.match(/測定不能|そくていふのう|不能|ふのう|測れない|はかれない/);
+
+          const explicitCellNum = extractExplicitCellNumber(normalized);
+          const floatMatches = normalized.match(/\d+\.\d+|\d+/g) || [];
+
+          if (explicitCellNum !== null) {
+            if (isImpossible) {
+              applyValueToCell(explicitCellNum, "測定不能");
+              return;
+            }
+
+            let valueStr = null;
+            for (let n of floatMatches) {
+              if (n !== String(explicitCellNum)) {
+                valueStr = n;
+                break;
+              }
+            }
+
+            if (valueStr !== null) {
+              applyValueToCell(explicitCellNum, valueStr);
+            } else {
+              setPendingCell(explicitCellNum);
+              speak(`${explicitCellNum}番`);
+            }
+            return;
+          }
+
+          if (pendingCellNum) {
+            if (isImpossible) {
+              applyValueToCell(pendingCellNum, "測定不能");
+              return;
+            }
+            if (floatMatches.length > 0) {
+              applyValueToCell(pendingCellNum, floatMatches[0]);
+              return;
+            }
+          }
+
           if (isImpossible) {
-            applyValueToCell(pendingCellNum, "測定不能");
+            applyValueToCell(currentAutoCellNum, "測定不能");
             return;
           }
+
           if (floatMatches.length > 0) {
-            applyValueToCell(pendingCellNum, floatMatches[0]);
-            return;
+            applyValueToCell(currentAutoCellNum, floatMatches[0]);
           }
-        }
-
-        if (isImpossible) {
-          applyValueToCell(currentAutoCellNum, "測定不能");
-          return;
-        }
-
-        if (floatMatches.length > 0) {
-          applyValueToCell(currentAutoCellNum, floatMatches[0]);
         }
       };
 
@@ -824,7 +852,7 @@
       };
 
       recognition.onend = () => {
-        if (isListening && !isSpeaking) {
+        if (activeListenMode && !isSpeaking) {
           try { recognition.start(); } catch(e) {}
         }
       };
