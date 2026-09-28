@@ -3,9 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（縦表示・Excel装飾出力対応版）</title>
-  <!-- Excelファイル（.xlsx）生成・装飾用ライブラリ -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <title>バッテリーセル記録（写真添付・装飾Excel出力対応版）</title>
+  <!-- Excelファイル（.xlsx）生成・画像埋め込み対応ライブラリ (ExcelJS) -->
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
+  <!-- ファイルダウンロード用ライブラリ (FileSaver.js) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <style>
     body { font-family: sans-serif; padding: 15px; max-width: 600px; margin: 0 auto; background-color: #f8f9fa; }
     h1 { text-align: center; font-size: 1.4rem; margin-bottom: 15px; }
@@ -50,6 +52,30 @@
       border: 1px solid #ccc;
       border-radius: 4px;
       background-color: #fff;
+    }
+
+    /* 写真添付用スタイル */
+    .photo-upload-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #f0f7ff;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px dashed #007bff;
+    }
+    .photo-preview-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #photo-preview {
+      max-width: 120px;
+      max-height: 90px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      display: none;
+      object-fit: cover;
     }
 
     .controls { 
@@ -187,6 +213,16 @@
         <option value="現地年次">現地年次</option>
       </select>
     </div>
+
+    <!-- 📸 銘板写真添付 -->
+    <div class="photo-upload-group">
+      <label for="plate-photo-input" style="font-weight: bold; color: #0056b3;">📸 バッテリー銘板写真:</label>
+      <div class="photo-preview-container">
+        <input type="file" id="plate-photo-input" accept="image/*" capture="environment" onchange="handlePhotoSelect(event)">
+        <img id="photo-preview" alt="銘板写真プレビュー">
+        <button type="button" id="remove-photo-btn" onclick="removePhoto()" style="display:none; padding:4px 8px; font-size:0.8rem; background:#dc3545; color:white; border:none;">削除</button>
+      </div>
+    </div>
   </div>
 
   <div class="controls">
@@ -259,11 +295,46 @@
     let currentAutoCellNum = 1;
     let isSpeaking = false;
 
+    // 写真保持用データ（Base64/ArrayBuffer）
+    let uploadedImageBase64 = null;
+    let uploadedImageType = "png";
+
+    // 写真プレビュー処理
+    function handlePhotoSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        uploadedImageBase64 = e.target.result;
+        
+        // 拡張子/タイプ取得
+        if (file.type.includes("jpeg") || file.type.includes("jpg")) {
+          uploadedImageType = "jpeg";
+        } else {
+          uploadedImageType = "png";
+        }
+
+        const imgElem = document.getElementById('photo-preview');
+        imgElem.src = uploadedImageBase64;
+        imgElem.style.display = 'block';
+        document.getElementById('remove-photo-btn').style.display = 'inline-block';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function removePhoto() {
+      uploadedImageBase64 = null;
+      document.getElementById('plate-photo-input').value = "";
+      document.getElementById('photo-preview').style.display = 'none';
+      document.getElementById('remove-photo-btn').style.display = 'none';
+    }
+
     // 音声モード: null（停止）, 'info'（基本情報）, 'cell'（セル数値入力）
     let activeListenMode = null; 
     let recognition = null;
 
-    // 容量フォーマット関数（「400」や「400Ah」を「400Ah / 5H」へ統一整形）
+    // 容量フォーマット関数
     function formatCapacityValue(val) {
       if (!val) return "";
       const match = val.match(/\d+/);
@@ -302,7 +373,6 @@
       updateMinMaxHighlights();
     }
 
-    // 音声読み上げ中のマイク一時停止制御付き speak 関数
     function speak(text, onEndCallback = null) {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -468,7 +538,6 @@
 
     document.getElementById('undo-btn').addEventListener('click', undoLastAction);
 
-    // 音声読み上げガイドボタン
     document.getElementById('guide-btn').addEventListener('click', () => {
       const guideText = 
         "音声入力の使い方を説明します。" +
@@ -477,21 +546,16 @@
         "数値のみを『1.250』や『2.15』とおっしゃると、1番セルから順に自動入力されます。" +
         "特定セルを指定する場合は『5番 1.250』や『12番 測定不能』とお話しください。" +
         "全体電圧は『トータル 48.5』で入力できます。" +
-        "直前の入力を戻したい場合は『戻す』、入力を終了するときは『終了』とお話しください。";
-      
+        "銘板写真を添付した場合は、Excelファイル出力時に表の最下部に貼り付けられます。";
       speak(guideText);
     });
 
     function normalizeSpeechText(text) {
       let t = text;
-
-      // フィラー（言い淀み・雑音）を除去
       t = t.replace(/(?:あー|あ〜|えー|え〜|うー|う〜|んー|ん〜|えっと|あのー|あの〜)/g, '');
-
       t = t.replace(/点|てん|テン|一転|回転/g, '.');
       t = t.replace(/ロック|録|六|ログ/g, '6');
       t = t.replace(/(?:ろく|ロク)\s*(?:番|セル)?/g, '6番');
-
       t = t.replace(/イチ/g, '1').replace(/ニ/g, '2').replace(/サン/g, '3')
            .replace(/ヨン/g, '4').replace(/ゴ/g, '5').replace(/ロク/g, '6')
            .replace(/ナナ/g, '7').replace(/ハチ/g, '8').replace(/キュウ/g, '9');
@@ -610,13 +674,9 @@
         const normalized = normalizeSpeechText(rawText);
         if (!normalized) return;
 
-        // ==========================================
-        // モード 1: 基本情報入力専用処理
-        // ==========================================
         if (activeListenMode === 'info') {
           let registeredCount = 0;
 
-          // 1. 会社名
           if (rawText.match(/会社名|会社|かいしゃめい|かいしゃ/)) {
             const val = rawText.replace(/^.*?(?:会社名|会社|かいしゃめい|かいしゃ)\s*/, '').replace(/(?:型式|モデル|バッテリー|容量|MFG|製造|測定|区分|充電).*$/, '').trim();
             if (val) {
@@ -625,7 +685,6 @@
             }
           }
 
-          // 2. バッテリー型式 (※「型式」より先に判定)
           if (rawText.match(/バッテリー型式|バッテリーのかたしき|バッテリータイプ/)) {
             const val = normalized.replace(/^.*?(?:バッテリー型式|バッテリーのかたしき|バッテリータイプ)\s*/, '').replace(/(?:型式|モデル|容量|MFG|製造|測定|区分|充電).*$/, '').trim();
             if (val) {
@@ -634,7 +693,6 @@
             }
           }
 
-          // 3. 型式
           if (rawText.match(/(?:^|[^バッテリー])(?:型式|かたしき|モデル)/)) {
             const val = normalized.replace(/^.*?(?:型式|かたしき|モデル)\s*/, '').replace(/(?:バッテリー|容量|MFG|製造|測定|区分|充電).*$/, '').trim();
             if (val) {
@@ -643,7 +701,6 @@
             }
           }
 
-          // 4. バッテリー容量 (★自動的に "400Ah / 5H" 形式へ変換)
           if (rawText.match(/バッテリー容量|容量|ようりょう/)) {
             const val = normalized.replace(/^.*?(?:バッテリー容量|容量|ようりょう)\s*/, '').replace(/(?:MFG|製造|測定|区分|充電).*$/, '').trim();
             if (val) {
@@ -653,7 +710,6 @@
             }
           }
 
-          // 5. MFG No.
           if (rawText.match(/MFG|エムエフジー|製造番号|シリアル/i)) {
             const val = normalized.replace(/^.*?(?:MFG|エムエフジー|製造番号|シリアル)\s*(?:ナンバー|No|no)?\s*/i, '').replace(/(?:測定|区分|充電).*$/, '').trim();
             if (val) {
@@ -662,7 +718,6 @@
             }
           }
 
-          // 6. 測定区分
           if (rawText.match(/充電前|充電後|現地年次|年次/)) {
             let selectedTiming = "";
             if (rawText.match(/充電前/)) selectedTiming = "充電前";
@@ -684,11 +739,7 @@
           return;
         }
 
-        // ==========================================
-        // モード 2: セル数値入力専用処理
-        // ==========================================
         if (activeListenMode === 'cell') {
-          // 全体電圧・モード・セル入力の判定
           if (rawText.match(/トータル|全体|ぜんたい|合計|ごうけい|総電圧|全電圧/)) {
             const numMatch = normalized.match(/\d+\.\d+|\d+/);
             if (numMatch) {
@@ -782,7 +833,6 @@
 
         const currentMode = document.querySelector('input[name="input-target"]:checked').value;
 
-        // 比重モード時の範囲チェック (1.100 ~ 1.400 または "測定不能")
         if (currentMode === 'sg' && val !== "測定不能") {
           const numVal = parseFloat(val);
           if (isNaN(numVal) || numVal < 1.100 || numVal > 1.400) {
@@ -791,7 +841,6 @@
           }
         }
 
-        // 電圧モード時の範囲チェック (0.50 ~ 2.50V)
         if (currentMode === 'v') {
           const numVal = parseFloat(val);
           if (isNaN(numVal) || numVal < 0.50 || numVal > 2.50) {
@@ -875,9 +924,9 @@
       alert("お使いのブラウザは音声認識機能に対応していません。Google Chromeをお試しください。");
     }
 
-    // 装飾付きExcelファイル（.xlsx）の出力処理（B10〜M13セル結合・左寄せ対応版）
-    document.getElementById('export-btn').addEventListener('click', () => {
-      if (typeof XLSX === 'undefined') {
+    // ExcelJS を使用した高度なExcelファイル出力（末尾写真挿入対応）
+    document.getElementById('export-btn').addEventListener('click', async () => {
+      if (typeof ExcelJS === 'undefined') {
         alert("Excelライブラリの読み込みに失敗しました。インターネット接続を確認してください。");
         return;
       }
@@ -899,261 +948,214 @@
       const vMinStr  = stats.v.min  !== null ? `${formatVoltageValue(stats.v.min)} (${stats.v.minCells.map(c=>c+'番').join('&')})`  : "-";
       const vMaxStr  = stats.v.max  !== null ? `${formatVoltageValue(stats.v.max)} (${stats.v.maxCells.map(c=>c+'番').join('&')})`  : "-";
 
-      // スタイル定義
-      const thinBorder = {
-        top: { style: "thin", color: { rgb: "CCCCCC" } },
-        bottom: { style: "thin", color: { rgb: "CCCCCC" } },
-        left: { style: "thin", color: { rgb: "CCCCCC" } },
-        right: { style: "thin", color: { rgb: "CCCCCC" } }
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('バッテリー測定結果');
+
+      // ページ設定（A4縦・自動フィット）
+      worksheet.pageSetup = {
+        paperSize: 9,
+        orientation: 'portrait',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0
       };
 
-      const styleMainTitle = {
-        font: { bold: true, size: 16, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "1F4E79" } },
-        alignment: { horizontal: "center", vertical: "center" }
+      // 共通スタイル定義
+      const fontDefault = { name: 'メイリオ', size: 9 };
+      const borderThin = {
+        top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+        left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+        bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+        right: { style: 'thin', color: { argb: 'FFCCCCCC' } }
       };
 
-      const styleTitle = {
-        font: { bold: true, size: 10, color: { rgb: "111111" } },
-        fill: { fgColor: { rgb: "E9ECEF" } },
-        border: thinBorder,
-        alignment: { horizontal: "left", vertical: "center" }
+      // スタイル定義ヘルパー関数
+      const applyRowStyles = (rowNumber, values, styleOptions) => {
+        const row = worksheet.getRow(rowNumber);
+        values.forEach((val, idx) => {
+          const cell = row.getCell(idx + 1);
+          cell.value = val;
+          cell.font = styleOptions.font || fontDefault;
+          cell.alignment = styleOptions.alignment || { vertical: 'middle', horizontal: 'center' };
+          cell.border = borderThin;
+          if (styleOptions.fill) cell.fill = styleOptions.fill;
+          if (styleOptions.numFmt) cell.numFmt = styleOptions.numFmt;
+        });
       };
 
-      const styleHeader = {
-        font: { bold: true, size: 9, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "17A2B8" } },
-        border: thinBorder,
-        alignment: { horizontal: "center", vertical: "center" }
+      // 1. タイトル行
+      worksheet.mergeCells('A1:M1');
+      const titleCell = worksheet.getCell('A1');
+      titleCell.value = 'バッテリー測定結果';
+      titleCell.font = { name: 'メイリオ', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      // 情報セクション作成ヘルパー
+      const createSectionHeader = (rowNum, title) => {
+        worksheet.mergeCells(`A${rowNum}:B${rowNum}`);
+        const cell = worksheet.getCell(`A${rowNum}`);
+        cell.value = title;
+        cell.font = { name: 'メイリオ', size: 10, bold: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9ECEF' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'left' };
+        worksheet.getCell(`B${rowNum}`).border = borderThin;
       };
 
-      const styleHeader2 = {
-        font: { bold: true, size: 9, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "0984E3" } },
-        border: thinBorder,
-        alignment: { horizontal: "center", vertical: "center" }
-      };
+      const createMergedInfoRow = (rowNum, label, valStr, fillObj = null, fontColor = null) => {
+        worksheet.getCell(`A${rowNum}`).value = label;
+        worksheet.getCell(`A${rowNum}`).font = { name: 'メイリオ', size: 9, bold: true };
+        worksheet.getCell(`A${rowNum}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+        worksheet.getCell(`A${rowNum}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`A${rowNum}`).border = borderThin;
 
-      const styleRowLabel = {
-        font: { bold: true, size: 9, color: { rgb: "333333" } },
-        fill: { fgColor: { rgb: "F0F0F0" } },
-        border: thinBorder,
-        alignment: { horizontal: "center", vertical: "center" }
-      };
-
-      const styleNormalSg = {
-        font: { size: 9, color: { rgb: "000000" } },
-        border: thinBorder,
-        alignment: { horizontal: "right", vertical: "center" },
-        numFmt: "0.000"
-      };
-
-      const styleNormalV = {
-        font: { size: 9, color: { rgb: "000000" } },
-        border: thinBorder,
-        alignment: { horizontal: "right", vertical: "center" },
-        numFmt: "0.00"
-      };
-
-      const styleNormalLeft = {
-        font: { size: 9, color: { rgb: "000000" } },
-        border: thinBorder,
-        alignment: { horizontal: "left", vertical: "center" }
-      };
-
-      const styleMaxSg = {
-        font: { bold: true, size: 9, color: { rgb: "D32F2F" } },
-        fill: { fgColor: { rgb: "FFEBEE" } },
-        border: thinBorder,
-        alignment: { horizontal: "right", vertical: "center" },
-        numFmt: "0.000"
-      };
-
-      const styleMinSg = {
-        font: { bold: true, size: 9, color: { rgb: "1976D2" } },
-        fill: { fgColor: { rgb: "E3F2FD" } },
-        border: thinBorder,
-        alignment: { horizontal: "right", vertical: "center" },
-        numFmt: "0.000"
-      };
-
-      const styleMaxV = {
-        font: { bold: true, size: 9, color: { rgb: "D32F2F" } },
-        fill: { fgColor: { rgb: "FFEBEE" } },
-        border: thinBorder,
-        alignment: { horizontal: "right", vertical: "center" },
-        numFmt: "0.00"
-      };
-
-      const styleMinV = {
-        font: { bold: true, size: 9, color: { rgb: "1976D2" } },
-        fill: { fgColor: { rgb: "E3F2FD" } },
-        border: thinBorder,
-        alignment: { horizontal: "right", vertical: "center" },
-        numFmt: "0.00"
-      };
-
-      // 結合セル（B列〜M列）用の左寄せスタイル定義
-      const styleMergedLeft = {
-        font: { size: 9, color: { rgb: "000000" } },
-        border: thinBorder,
-        alignment: { horizontal: "left", vertical: "center" }
-      };
-
-      const styleMergedMaxSgLeft = {
-        font: { bold: true, size: 9, color: { rgb: "D32F2F" } },
-        fill: { fgColor: { rgb: "FFEBEE" } },
-        border: thinBorder,
-        alignment: { horizontal: "left", vertical: "center" }
-      };
-
-      const styleMergedMinSgLeft = {
-        font: { bold: true, size: 9, color: { rgb: "1976D2" } },
-        fill: { fgColor: { rgb: "E3F2FD" } },
-        border: thinBorder,
-        alignment: { horizontal: "left", vertical: "center" }
-      };
-
-      const styleMergedMaxVLeft = {
-        font: { bold: true, size: 9, color: { rgb: "D32F2F" } },
-        fill: { fgColor: { rgb: "FFEBEE" } },
-        border: thinBorder,
-        alignment: { horizontal: "left", vertical: "center" }
-      };
-
-      const styleMergedMinVLeft = {
-        font: { bold: true, size: 9, color: { rgb: "1976D2" } },
-        fill: { fgColor: { rgb: "E3F2FD" } },
-        border: thinBorder,
-        alignment: { horizontal: "left", vertical: "center" }
-      };
-
-      // 結合行（B〜M）用のダミーセル作成ヘルパー関数
-      const makeMergedRow = (label, valStr, style) => {
-        let row = [{ v: label, s: styleRowLabel }, { v: valStr, s: style }];
-        for (let i = 2; i <= 12; i++) {
-          row.push({ v: "", s: style });
+        worksheet.mergeCells(`B${rowNum}:M${rowNum}`);
+        const valCell = worksheet.getCell(`B${rowNum}`);
+        valCell.value = valStr;
+        valCell.font = { name: 'メイリオ', size: 9, bold: fontColor ? true : false, color: fontColor ? { argb: fontColor } : { argb: 'FF000000' } };
+        valCell.alignment = { vertical: 'middle', horizontal: 'left' };
+        if (fillObj) valCell.fill = fillObj;
+        
+        for (let col = 2; col <= 13; col++) {
+          worksheet.getRow(rowNum).getCell(col).border = borderThin;
         }
-        return row;
       };
 
-      // ワークシートデータ構築
-      const wsData = [];
+      // 2. 基本情報
+      createSectionHeader(2, '■ 基本情報');
+      createMergedInfoRow(3, '会社名', companyName);
+      createMergedInfoRow(4, '型式', modelType);
+      createMergedInfoRow(5, 'バッテリー型式', batteryType);
+      createMergedInfoRow(6, 'バッテリー容量', batteryCapacity);
+      createMergedInfoRow(7, 'MFG No.', mfgNumber);
+      createMergedInfoRow(8, '測定区分', measurementTiming);
 
-      let mainTitleRow = [{ v: "バッテリー測定結果", s: styleMainTitle }];
-      for (let i = 1; i <= 12; i++) mainTitleRow.push({ v: "", s: styleMainTitle });
-      wsData.push(mainTitleRow);
+      // 3. 全体情報
+      createSectionHeader(9, '■ 全体情報');
+      createMergedInfoRow(10, '全体電圧 (V)', totalV !== "-" ? `${totalV} V` : "-");
+      
+      const fillRed = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEBEE' } };
+      const fillBlue = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE3F2FD' } };
 
-      // 基本情報
-      wsData.push([{ v: "■ 基本情報", s: styleTitle }, { v: "", s: styleTitle }]);
-      wsData.push(makeMergedRow("会社名", companyName, styleMergedLeft));
-      wsData.push(makeMergedRow("型式", modelType, styleMergedLeft));
-      wsData.push(makeMergedRow("バッテリー型式", batteryType, styleMergedLeft));
-      wsData.push(makeMergedRow("バッテリー容量", batteryCapacity, styleMergedLeft));
-      wsData.push(makeMergedRow("MFG No.", mfgNumber, styleMergedLeft));
-      wsData.push(makeMergedRow("測定区分", measurementTiming, styleMergedLeft));
+      createMergedInfoRow(11, '比重 最低値', sgMinStr, fillBlue, 'FF1976D2');
+      createMergedInfoRow(12, '比重 最高値', sgMaxStr, fillRed, 'FFD32F2F');
+      createMergedInfoRow(13, '電圧 最低値', vMinStr, fillBlue, 'FF1976D2');
+      createMergedInfoRow(14, '電圧 最高値', vMaxStr, fillRed, 'FFD32F2F');
 
-      // 全体情報
-      wsData.push([{ v: "■ 全体情報", s: styleTitle }, { v: "", s: styleTitle }]);
-      wsData.push(makeMergedRow("全体電圧 (V)", totalV !== "-" ? `${totalV} V` : "-", styleMergedLeft));
-      wsData.push(makeMergedRow("比重 最低値", sgMinStr, styleMergedMinSgLeft));
-      wsData.push(makeMergedRow("比重 最高値", sgMaxStr, styleMergedMaxSgLeft));
-      wsData.push(makeMergedRow("電圧 最低値", vMinStr, styleMergedMinVLeft));
-      wsData.push(makeMergedRow("電圧 最高値", vMaxStr, styleMergedMaxVLeft));
+      // 4. 24セル測定データテーブル構築
+      const appendBlockBlock = (startRow, title, startCell, endCell, headerBg) => {
+        createSectionHeader(startRow, `■ ${title}`);
 
-      // ブロック作成関数
-      const appendBlock = (title, startCell, endCell, headerStyle) => {
-        let titleRow = [{ v: `■ ${title}`, s: styleTitle }];
-        for (let i = startCell; i <= endCell; i++) titleRow.push({ v: "", s: styleTitle });
-        wsData.push(titleRow);
+        // セルNo. ヘッダー
+        const headers = ['セル No.'];
+        for (let i = startCell; i <= endCell; i++) headers.push(i);
+        applyRowStyles(startRow + 1, headers, {
+          font: { name: 'メイリオ', size: 9, bold: true, color: { argb: 'FFFFFFFF' } },
+          fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } }
+        });
+        worksheet.getRow(startRow + 1).getCell(1).font = { name: 'メイリオ', size: 9, bold: true };
+        worksheet.getRow(startRow + 1).getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
 
-        let headerRow = [{ v: "セル No.", s: styleRowLabel }];
+        // 比重行
+        const sgRow = worksheet.getRow(startRow + 2);
+        sgRow.getCell(1).value = '比重 (S.G.)';
+        sgRow.getCell(1).font = { name: 'メイリオ', size: 9, bold: true };
+        sgRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+        sgRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+        sgRow.getCell(1).border = borderThin;
+
         for (let i = startCell; i <= endCell; i++) {
-          headerRow.push({ v: i, s: headerStyle });
-        }
-        wsData.push(headerRow);
-
-        let sgRow = [{ v: "比重 (S.G.)", s: styleRowLabel }];
-        for (let i = startCell; i <= endCell; i++) {
+          const colIdx = i - startCell + 2;
+          const cell = sgRow.getCell(colIdx);
           const rawVal = document.getElementById(`sg-${i}`).value;
           const val = parseFloat(rawVal);
-          let cellStyle = styleNormalSg;
+
+          cell.border = borderThin;
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+
           if (rawVal === "測定不能") {
-            sgRow.push({ v: "測定不能", s: styleNormalSg, t: "s" });
-          } else {
-            if (!isNaN(val)) {
-              if (stats.sg.max !== null && val === stats.sg.max) cellStyle = styleMaxSg;
-              else if (stats.sg.min !== null && val === stats.sg.min) cellStyle = styleMinSg;
+            cell.value = "測定不能";
+            cell.font = fontDefault;
+          } else if (!isNaN(val)) {
+            cell.value = val;
+            cell.numFmt = '0.000';
+            if (stats.sg.max !== null && val === stats.sg.max) {
+              cell.font = { name: 'メイリオ', size: 9, bold: true, color: { argb: 'FFD32F2F' } };
+              cell.fill = fillRed;
+            } else if (stats.sg.min !== null && val === stats.sg.min) {
+              cell.font = { name: 'メイリオ', size: 9, bold: true, color: { argb: 'FF1976D2' } };
+              cell.fill = fillBlue;
+            } else {
+              cell.font = fontDefault;
             }
-            sgRow.push({ v: rawVal !== "" ? val : "", s: cellStyle, t: rawVal !== "" ? "n" : "s" });
           }
         }
-        wsData.push(sgRow);
 
-        let vRow = [{ v: "電圧 (V)", s: styleRowLabel }];
+        // 電圧行
+        const vRow = worksheet.getRow(startRow + 3);
+        vRow.getCell(1).value = '電圧 (V)';
+        vRow.getCell(1).font = { name: 'メイリオ', size: 9, bold: true };
+        vRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+        vRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+        vRow.getCell(1).border = borderThin;
+
         for (let i = startCell; i <= endCell; i++) {
+          const colIdx = i - startCell + 2;
+          const cell = vRow.getCell(colIdx);
           const rawVal = document.getElementById(`v-${i}`).value;
           const val = parseFloat(rawVal);
-          let cellStyle = styleNormalV;
+
+          cell.border = borderThin;
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+
           if (!isNaN(val)) {
-            if (stats.v.max !== null && val === stats.v.max) cellStyle = styleMaxV;
-            else if (stats.v.min !== null && val === stats.v.min) cellStyle = styleMinV;
+            cell.value = val;
+            cell.numFmt = '0.00';
+            if (stats.v.max !== null && val === stats.v.max) {
+              cell.font = { name: 'メイリオ', size: 9, bold: true, color: { argb: 'FFD32F2F' } };
+              cell.fill = fillRed;
+            } else if (stats.v.min !== null && val === stats.v.min) {
+              cell.font = { name: 'メイリオ', size: 9, bold: true, color: { argb: 'FF1976D2' } };
+              cell.fill = fillBlue;
+            } else {
+              cell.font = fontDefault;
+            }
           }
-          vRow.push({ v: rawVal !== "" ? val : "", s: cellStyle, t: rawVal !== "" ? "n" : "s" });
         }
-        wsData.push(vRow);
       };
 
-      appendBlock("1〜12番", 1, 12, styleHeader);
-      appendBlock("13〜24番", 13, 24, styleHeader2);
+      appendBlockBlock(15, "1〜12番", 1, 12, "FF17A2B8");
+      appendBlockBlock(19, "13〜24番", 13, 24, "FF0984E3");
 
-      // ブック＆シート作成
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      let nextRow = 23;
 
-      // セル結合指定（1行目タイトル、基本情報行、全体情報行など）
-      ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } },   // メインタイトル
-        { s: { r: 1, c: 0 }, e: { r: 1, c: 1 } },    // ■ 基本情報
-        { s: { r: 2, c: 1 }, e: { r: 2, c: 12 } },   // 会社名
-        { s: { r: 3, c: 1 }, e: { r: 3, c: 12 } },   // 型式
-        { s: { r: 4, c: 1 }, e: { r: 4, c: 12 } },   // バッテリー型式
-        { s: { r: 5, c: 1 }, e: { r: 5, c: 12 } },   // バッテリー容量
-        { s: { r: 6, c: 1 }, e: { r: 6, c: 12 } },   // MFG No.
-        { s: { r: 7, c: 1 }, e: { r: 7, c: 12 } },   // 測定区分
-        { s: { r: 8, c: 0 }, e: { r: 8, c: 1 } },    // ■ 全体情報
-        { s: { r: 9, c: 1 }, e: { r: 9, c: 12 } },   // 全体電圧
-        { s: { r: 10, c: 1 }, e: { r: 10, c: 12 } }, // 比重 最低値（B11:M11）
-        { s: { r: 11, c: 1 }, e: { r: 11, c: 12 } }, // 比重 最高値（B12:M12）
-        { s: { r: 12, c: 1 }, e: { r: 12, c: 12 } }, // 電圧 最低値（B13:M13）
-        { s: { r: 13, c: 1 }, e: { r: 13, c: 12 } }  // 電圧 最高値（B14:M14）
-      ];
+      // 5. 📸 表の末尾に「バッテリー銘板写真」を貼り付け
+      if (uploadedImageBase64) {
+        createSectionHeader(nextRow, '■ バッテリー銘板写真');
+        
+        // 銘板写真貼り付けエリア用にセルを結合
+        worksheet.mergeCells(`A${nextRow + 1}:M${nextRow + 12}`);
 
-      // 列幅の調整（A4縦1ページに収まる幅）
-      const cols = [{ wch: 14 }];
-      for (let i = 1; i <= 12; i++) cols.push({ wch: 5.5 });
-      ws['!cols'] = cols;
+        const imageId = workbook.addImage({
+          base64: uploadedImageBase64,
+          extension: uploadedImageType,
+        });
 
-      // 行高の調整
-      const rows = [{ hpt: 32 }];
-      ws['!rows'] = rows;
+        // 結合エリア（A24:M35）内に綺麗に収まるよう配置
+        worksheet.addImage(imageId, {
+          tl: { col: 0.2, row: nextRow },
+          br: { col: 12.8, row: nextRow + 12 },
+          editAs: 'oneCell'
+        });
+      }
 
-      // A4縦1ページ自動収める印刷設定
-      ws['!pageSetup'] = {
-        paperSize: 9,           // A4
-        orientation: 'portrait', // 縦向き
-        fitToPage: true,        // ページフィット有効化
-        fitToWidth: 1,          // 横幅1ページ
-        fitToHeight: 1          // 縦幅1ページ
-      };
+      // 列幅の調整
+      worksheet.getColumn(1).width = 15;
+      for (let col = 2; col <= 13; col++) {
+        worksheet.getColumn(col).width = 6;
+      }
 
-      // 余白設定
-      ws['!margins'] = { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 };
-      ws['!sheetViews'] = [{ showGridLines: true }];
-
-      XLSX.utils.book_append_sheet(wb, ws, "バッテリー測定結果");
-
-      // 日付時刻フォーマット YYYYMMDD_HHMM
+      // ファイル保存
       const now = new Date();
       const timestamp = now.getFullYear() +
         String(now.getMonth() + 1).padStart(2, '0') +
@@ -1168,8 +1170,10 @@
 
       const fileName = `バッテリー測定結果_${safeCompany}_${safeTiming}_${safeModel}_${timestamp}.xlsx`;
 
-      XLSX.writeFile(wb, fileName);
-      speak("お疲れ様です。測定結果をExcelファイルに出力しました");
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(new Blob([buffer]), fileName);
+
+      speak("お疲れ様です。銘板写真を添付した測定結果Excelファイルを出力しました");
     });
   </script>
 </body>
