@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バッテリーセル記録（メール添付ボタン追加版）</title>
+  <title>バッテリーセル記録</title>
   <!-- Excelファイル（.xlsx）生成・画像埋め込み対応ライブラリ (ExcelJS) -->
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
   <!-- ファイルダウンロード用ライブラリ (FileSaver.js) -->
@@ -244,9 +244,8 @@
 
     <div class="mode-selector">
       <span>入力対象:</span>
-      <label><input type="radio" name="input-target" id="radio-sg" value="sg" checked> 🧪 比重モード</label>
-      <label><input type="radio" name="input-target" id="radio-v" value="v"> ⚡ 電圧モード</label>
-      <label><input type="radio" name="input-target" id="radio-both" value="both"> 🔄 両方モード</label>
+      <label><input type="radio" name="input-target" id="radio-sg" value="sg" checked> 🧪 比重</label>
+      <label><input type="radio" name="input-target" id="radio-v" value="v"> ⚡ 電圧</label>
     </div>
     
     <div class="recognized-text">
@@ -525,8 +524,8 @@
       if (targetRadio) {
         targetRadio.checked = true;
         if (shouldSpeak) {
-          const modeName = modeValue === 'sg' ? '比重' : modeValue === 'v' ? '電圧' : '両方';
-          speak(`${modeName}モードに変更しました`);
+          const modeName = modeValue === 'sg' ? '比重' : '電圧';
+          speak(`${modeName}に変更しました`);
         }
       }
     }
@@ -890,22 +889,6 @@
           formattedVal = formatVoltageValue(val);
           document.getElementById(`v-${cellNum}`).value = formattedVal;
           updated = true;
-        } else if (currentMode === 'both') {
-          if (val === "測定不能") {
-            document.getElementById(`sg-${cellNum}`).value = val;
-            updated = true;
-          } else {
-            const numVal = parseFloat(val);
-            if (!isNaN(numVal) && numVal >= 1.100 && numVal <= 1.400) {
-              formattedVal = formatSgValue(val);
-              document.getElementById(`sg-${cellNum}`).value = formattedVal;
-              updated = true;
-            } else if (!isNaN(numVal) && numVal >= 0.50 && numVal <= 2.50) {
-              formattedVal = formatVoltageValue(val);
-              document.getElementById(`v-${cellNum}`).value = formattedVal;
-              updated = true;
-            }
-          }
         }
 
         if (updated) {
@@ -1226,7 +1209,6 @@
         `■ 測定区分: ${timing}\n\n` +
         `よろしくお願いいたします。`;
 
-      // Web Share API（スマホや対応ブラウザでファイル添付付きメールを起動する機能）が使える場合
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
           await navigator.canShare({ files: [file] });
@@ -1240,12 +1222,11 @@
           if (err.name !== 'AbortError') {
             console.error("共有エラー:", err);
           } else {
-            return; // ユーザーがシェアをキャンセルした場合
+            return;
           }
         }
       }
 
-      // フォールバック：通常ダウンロードしつつメーラー（mailto）を起動
       saveAs(file, fileName);
 
       const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
