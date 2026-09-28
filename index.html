@@ -58,7 +58,7 @@
     button { font-size: 0.95rem; padding: 8px 14px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; }
     #start-btn { background-color: #4CAF50; color: white; border: none; }
     #start-btn.listening { background-color: #f44336; }
-    #help-btn { background-color: #17a2b8; color: white; border: none; }
+    #guide-btn { background-color: #0288d1; color: white; border: none; }
     #undo-btn { background-color: #ff9800; color: white; border: none; }
     #export-btn { background-color: #1D6F42; color: white; border: none; }
     
@@ -111,10 +111,10 @@
     th, td { border: 1px solid #ccc; text-align: center; padding: 8px 4px; font-size: 0.95rem; }
     th { background: #f0f0f0; }
     
-    input[type="text"], input[type="number"] {
+    input.cell-input {
       width: 90%;
       padding: 6px;
-      font-size: 0.95rem;
+      font-size: 1rem;
       border: 1px solid #ccc;
       border-radius: 4px;
       text-align: right;
@@ -174,7 +174,7 @@
 
   <div class="controls">
     <button id="start-btn">🎤 音声入力 開始</button>
-    <button id="help-btn">❓ 音声ガイド</button>
+    <button id="guide-btn">❓ 音声ガイド</button>
     <button id="undo-btn">↩️ 1つ戻す</button>
     <button id="export-btn">📊 Excelファイル（.xlsx）出力</button>
     <span id="status">停止中</span>
@@ -188,7 +188,7 @@
 
     <div class="mode-selector">
       <span>入力対象:</span>
-      <label><input type="radio" name="input-target" id="radio-sg" value="sg" checked> 🧪 比重モード</label>
+      <label><input type="radio" name="input-target" id="radio-sg" value="sg" checked> 🧪 比重モード (1.100~1.400)</label>
       <label><input type="radio" name="input-target" id="radio-v" value="v"> ⚡ 電圧モード</label>
       <label><input type="radio" name="input-target" id="radio-both" value="both"> 🔄 両方モード</label>
     </div>
@@ -217,13 +217,13 @@
                 <td style="font-weight:bold; background:#f9f9f9;">${i}</td>
                 <td>
                   <div style="display:flex; align-items:center; justify-content:center;">
-                    <input type="text" id="sg-${i}" oninput="updateMinMaxHighlights()" placeholder="1.280 または 測定不能">
+                    <input type="text" class="cell-input" id="sg-${i}" oninput="updateMinMaxHighlights()">
                     <span id="badge-sg-${i}"></span>
                   </div>
                 </td>
                 <td>
                   <div style="display:flex; align-items:center; justify-content:center;">
-                    <input type="number" step="0.01" id="v-${i}" oninput="updateMinMaxHighlights()">
+                    <input type="number" step="0.01" class="cell-input" id="v-${i}" oninput="updateMinMaxHighlights()">
                     <span id="badge-v-${i}"></span>
                   </div>
                 </td>
@@ -241,45 +241,44 @@
     let pendingTimer = null;
     let currentAutoCellNum = 1;
     let isSpeaking = false;
+    let isListening = false;
+    let recognition = null;
 
+    // 音声読み上げ中のマイク一時停止制御付き speak 関数
     function speak(text, onEndCallback = null) {
       if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
+        window.speechSynthesis.cancel(); // 既存の読み上げを強制停止
         
+        isSpeaking = true;
+
+        // 読み上げ開始時に音声認識を停止させて自尊ループを防ぐ
+        if (isListening && recognition) {
+          try { recognition.stop(); } catch(e) {}
+        }
+
         const uttr = new SpeechSynthesisUtterance(text);
         uttr.lang = 'ja-JP';
         uttr.rate = 1.1;
 
-        uttr.onstart = () => { isSpeaking = true; };
-        uttr.onend = () => { 
+        const handleEnd = () => {
+          // 発話が終わった後に余裕を持たせてからマイクを再開
           setTimeout(() => { 
             isSpeaking = false; 
+            if (isListening && recognition) {
+              try { recognition.start(); } catch(e) {}
+            }
             if (onEndCallback) onEndCallback();
-          }, 300); 
+          }, 400);
         };
-        uttr.onerror = () => { 
-          isSpeaking = false; 
-          if (onEndCallback) onEndCallback();
-        };
+
+        uttr.onend = handleEnd;
+        uttr.onerror = handleEnd;
 
         window.speechSynthesis.speak(uttr);
       } else {
         if (onEndCallback) onEndCallback();
       }
     }
-
-    // 音声使い方ガイドのアナウンス
-    document.getElementById('help-btn').addEventListener('click', () => {
-      const guideText = "音声入力の使い方を説明します。" +
-        "数値だけを『1点280』のように話すと、順番に自動入力されます。" +
-        "特定の場所に入れるには、『5番 1点280』のように番数を言います。" +
-        "比重が入らない場合は『測定不能』と話すと入力されます。" +
-        "全体電圧は『トータル 48点5』と話します。" +
-        "『比重モード』や『電圧モード』と話すと、入力モードを切り替えられます。" +
-        "間違えた時は『戻す』、入力をやめる時は『終了』と言ってください。";
-      
-      speak(guideText);
-    });
 
     function updateMinMaxHighlights() {
       const stats = calculateMinMax();
@@ -290,10 +289,11 @@
         badgeSg.innerHTML = '';
         badgeV.innerHTML = '';
 
-        const sgVal = parseFloat(document.getElementById(`sg-${i}`).value);
+        const sgRaw = document.getElementById(`sg-${i}`).value;
+        const sgVal = parseFloat(sgRaw);
         const vVal = parseFloat(document.getElementById(`v-${i}`).value);
 
-        if (!isNaN(sgVal)) {
+        if (!isNaN(sgVal) && sgRaw !== "測定不能") {
           if (stats.sg.max !== null && sgVal === stats.sg.max) {
             badgeSg.innerHTML = '<span class="badge badge-max">最高</span>';
           } else if (stats.sg.min !== null && sgVal === stats.sg.min) {
@@ -316,12 +316,11 @@
       let vList = [];
 
       for (let i = 1; i <= 24; i++) {
-        const rawSg = document.getElementById(`sg-${i}`).value.trim();
-        const sgVal = parseFloat(rawSg);
+        const sgRaw = document.getElementById(`sg-${i}`).value;
+        const sgVal = parseFloat(sgRaw);
         const vVal = parseFloat(document.getElementById(`v-${i}`).value);
 
-        // 「測定不能」等は数値にならないため自動で弾かれます
-        if (!isNaN(sgVal)) sgList.push({ cell: i, val: sgVal });
+        if (!isNaN(sgVal) && sgRaw !== "測定不能") sgList.push({ cell: i, val: sgVal });
         if (!isNaN(vVal)) vList.push({ cell: i, val: vVal });
       }
 
@@ -357,7 +356,7 @@
         clearTimeout(pendingTimer);
         pendingTimer = setTimeout(() => {
           clearPendingCell();
-        }, 7000);
+        }, 8000);
       }
     }
 
@@ -412,6 +411,19 @@
 
     document.getElementById('undo-btn').addEventListener('click', undoLastAction);
 
+    // 音声読み上げガイドボタン
+    document.getElementById('guide-btn').addEventListener('click', () => {
+      const guideText = 
+        "音声入力の使い方を説明します。" +
+        "数値のみを『1.250』や『2.15』とおっしゃると、1番セルから順に自動入力されます。" +
+        "特定セルを指定する場合は『5番 1.250』や『12番 測定不能』とお話しください。" +
+        "全体電圧は『トータル 48.5』で入力できます。" +
+        "比重は1.100から1.400の範囲で受付いたします。" +
+        "直前の入力を戻したい場合は『戻す』、入力を終了するときは『終了』とお話しください。";
+      
+      speak(guideText);
+    });
+
     function normalizeSpeechText(text) {
       let t = text;
 
@@ -444,7 +456,6 @@
       return t;
     }
 
-    // 「○番」「セル○」などの明示的なセル番号指定のみを厳格に認識
     function extractExplicitCellNumber(text) {
       const match = text.match(/(?:セル|セルナンバー|ナンバー|No|no)?\s*(\d{1,2})\s*(?:番|セル)/);
       if (match) {
@@ -457,7 +468,7 @@
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     
     if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
+      recognition = new SpeechRecognition();
       recognition.lang = 'ja-JP';
       recognition.continuous = true;
       recognition.interimResults = false;
@@ -465,11 +476,10 @@
       const startBtn = document.getElementById('start-btn');
       const status = document.getElementById('status');
       const lastSpeech = document.getElementById('last-speech');
-      let isListening = false;
 
       function stopListening() {
         isListening = false;
-        recognition.stop();
+        try { recognition.stop(); } catch(e) {}
         status.textContent = "停止中";
         status.style.color = "#555";
         startBtn.textContent = "🎤 音声入力 開始";
@@ -479,6 +489,7 @@
       }
 
       function startListening() {
+        isListening = true;
         status.textContent = "準備中...";
         status.style.color = "#ff9800";
         startBtn.textContent = "⌛ 起動中...";
@@ -490,7 +501,6 @@
             status.style.color = "green";
             startBtn.textContent = "⏹️ 音声入力 停止";
             startBtn.classList.add('listening');
-            isListening = true;
           } catch (e) {
             console.error("開始エラー:", e);
           }
@@ -503,6 +513,7 @@
       });
 
       recognition.onresult = (event) => {
+        // システム発話中またはループ防止フラグON時は処理を行わない
         if (isSpeaking) return;
 
         const lastIndex = event.results.length - 1;
@@ -555,20 +566,23 @@
           return;
         }
 
+        // 測定不能の音声判定
+        const isImpossible = rawText.match(/測定不能|そくていふのう|不能|ふのう|測れない|はかれない/);
+
         const explicitCellNum = extractExplicitCellNumber(normalized);
         const floatMatches = normalized.match(/\d+\.\d+|\d+/g) || [];
-        const isUnmeasurable = /測定不能|測れない|不能|ふのう/.test(rawText);
 
         if (explicitCellNum !== null) {
+          if (isImpossible) {
+            applyValueToCell(explicitCellNum, "測定不能");
+            return;
+          }
+
           let valueStr = null;
-          if (isUnmeasurable) {
-            valueStr = "測定不能";
-          } else {
-            for (let n of floatMatches) {
-              if (n !== String(explicitCellNum)) {
-                valueStr = n;
-                break;
-              }
+          for (let n of floatMatches) {
+            if (n !== String(explicitCellNum)) {
+              valueStr = n;
+              break;
             }
           }
 
@@ -582,18 +596,22 @@
         }
 
         if (pendingCellNum) {
-          if (isUnmeasurable) {
+          if (isImpossible) {
             applyValueToCell(pendingCellNum, "測定不能");
             return;
-          } else if (floatMatches.length > 0) {
+          }
+          if (floatMatches.length > 0) {
             applyValueToCell(pendingCellNum, floatMatches[0]);
             return;
           }
         }
 
-        if (isUnmeasurable) {
+        if (isImpossible) {
           applyValueToCell(currentAutoCellNum, "測定不能");
-        } else if (floatMatches.length > 0) {
+          return;
+        }
+
+        if (floatMatches.length > 0) {
           applyValueToCell(currentAutoCellNum, floatMatches[0]);
         }
       };
@@ -602,6 +620,15 @@
         if (cellNum < 1 || cellNum > 24) return;
 
         const currentMode = document.querySelector('input[name="input-target"]:checked').value;
+
+        // 比重モード時の範囲チェック (1.100 ~ 1.400 または "測定不能")
+        if (currentMode === 'sg' && val !== "測定不能") {
+          const numVal = parseFloat(val);
+          if (isNaN(numVal) || numVal < 1.100 || numVal > 1.400) {
+            speak("比重の範囲外です");
+            return;
+          }
+        }
 
         const previousState = {
           type: 'cell',
@@ -614,41 +641,24 @@
 
         let updated = false;
 
-        if (val === "測定不能") {
-          // 比重欄に測定不能を適用（比重モードまたは両方モードの場合）
-          if (currentMode === 'sg' || currentMode === 'both') {
-            document.getElementById(`sg-${cellNum}`).value = "測定不能";
+        if (currentMode === 'sg') {
+          document.getElementById(`sg-${cellNum}`).value = val;
+          updated = true;
+        } else if (currentMode === 'v') {
+          document.getElementById(`v-${cellNum}`).value = val;
+          updated = true;
+        } else if (currentMode === 'both') {
+          if (val === "測定不能") {
+            document.getElementById(`sg-${cellNum}`).value = val;
             updated = true;
-          } else if (currentMode === 'v') {
-            speak("電圧モードでは測定不能を入力できません");
-            return;
-          }
-        } else {
-          const numVal = parseFloat(val);
-
-          if (currentMode === 'sg') {
-            // 比重の範囲制限 (1.100 〜 1.400)
+          } else {
+            const numVal = parseFloat(val);
             if (!isNaN(numVal) && numVal >= 1.100 && numVal <= 1.400) {
               document.getElementById(`sg-${cellNum}`).value = val;
               updated = true;
-            } else {
-              speak("比重の範囲外です。1点1から1点4の範囲で発話してください");
-              return;
-            }
-          } else if (currentMode === 'v') {
-            document.getElementById(`v-${cellNum}`).value = val;
-            updated = true;
-          } else if (currentMode === 'both') {
-            // 両方モード時：比重の範囲内であれば比重、それ以外で2.0以上なら電圧
-            if (!isNaN(numVal) && numVal >= 1.100 && numVal <= 1.400) {
-              document.getElementById(`sg-${cellNum}`).value = val;
-              updated = true;
-            } else if (!isNaN(numVal) && numVal >= 2.0) {
+            } else if (!isNaN(numVal) && numVal >= 1.5) {
               document.getElementById(`v-${cellNum}`).value = val;
               updated = true;
-            } else {
-              speak("数値の判定ができませんでした");
-              return;
             }
           }
         }
@@ -675,13 +685,14 @@
       }
 
       recognition.onerror = (event) => {
+        if (event.error === 'no-speech' || event.error === 'aborted') return;
         console.error("音声認識エラー:", event.error);
         status.textContent = "エラー: " + event.error;
         status.style.color = "red";
       };
 
       recognition.onend = () => {
-        if (isListening) {
+        if (isListening && !isSpeaking) {
           try { recognition.start(); } catch(e) {}
         }
       };
@@ -790,7 +801,7 @@
       for (let i = 1; i <= 12; i++) mainTitleRow.push({ v: "", s: styleMainTitle });
       wsData.push(mainTitleRow);
 
-      // 基本情報（MFG No.の次に測定区分を配置）
+      // 基本情報
       wsData.push([{ v: "■ 基本情報", s: styleTitle }, { v: "", s: styleTitle }]);
       wsData.push([{ v: "会社名", s: styleRowLabel }, { v: companyName, s: styleNormalLeft }]);
       wsData.push([{ v: "型式", s: styleRowLabel }, { v: modelType, s: styleNormalLeft }]);
@@ -821,26 +832,24 @@
 
         let sgRow = [{ v: "比重 (S.G.)", s: styleRowLabel }];
         for (let i = startCell; i <= endCell; i++) {
-          const rawVal = document.getElementById(`sg-${i}`).value.trim();
+          const rawVal = document.getElementById(`sg-${i}`).value;
           const val = parseFloat(rawVal);
           let cellStyle = styleNormal;
-
           if (rawVal === "測定不能") {
-            cellStyle = styleNormal;
-            sgRow.push({ v: "測定不能", s: cellStyle, t: "s" });
-          } else if (!isNaN(val)) {
-            if (stats.sg.max !== null && val === stats.sg.max) cellStyle = styleMax;
-            else if (stats.sg.min !== null && val === stats.sg.min) cellStyle = styleMin;
-            sgRow.push({ v: val, s: cellStyle, t: "n" });
+            sgRow.push({ v: "測定不能", s: styleNormal, t: "s" });
           } else {
-            sgRow.push({ v: "", s: cellStyle, t: "s" });
+            if (!isNaN(val)) {
+              if (stats.sg.max !== null && val === stats.sg.max) cellStyle = styleMax;
+              else if (stats.sg.min !== null && val === stats.sg.min) cellStyle = styleMin;
+            }
+            sgRow.push({ v: rawVal !== "" ? val : "", s: cellStyle, t: rawVal !== "" ? "n" : "s" });
           }
         }
         wsData.push(sgRow);
 
         let vRow = [{ v: "電圧 (V)", s: styleRowLabel }];
         for (let i = startCell; i <= endCell; i++) {
-          const rawVal = document.getElementById(`v-${i}`).value.trim();
+          const rawVal = document.getElementById(`v-${i}`).value;
           const val = parseFloat(rawVal);
           let cellStyle = styleNormal;
           if (!isNaN(val)) {
@@ -869,17 +878,17 @@
       for (let i = 1; i <= 12; i++) cols.push({ wch: 5.5 });
       ws['!cols'] = cols;
 
-      // 行高の調整（タイトル行を高く設定）
-      const rows = [{ hpt: 32 }]; // 1行目（メインタイトル）を高さ32ptに設定
+      // 行高の調整
+      const rows = [{ hpt: 32 }];
       ws['!rows'] = rows;
 
-      // 🖨️ A4縦1ページ自動収める印刷設定
+      // A4縦1ページ自動収める印刷設定
       ws['!pageSetup'] = {
         paperSize: 9,           // A4
         orientation: 'portrait', // 縦向き
         fitToPage: true,        // ページフィット有効化
         fitToWidth: 1,          // 横幅1ページ
-        fitToHeight: 1          // 縦幅1ページ（確実にA4縦1枚に集約）
+        fitToHeight: 1          // 縦幅1ページ
       };
 
       // 余白設定
@@ -896,13 +905,11 @@
         String(now.getHours()).padStart(2, '0') +
         String(now.getMinutes()).padStart(2, '0');
 
-      // ファイル名に使用できない記号を除去
       const sanitize = (str) => str.replace(/[\/\\?%*:|"<>]/g, '_');
       const safeCompany = companyNameRaw ? sanitize(companyNameRaw) : "未設定";
       const safeModel = modelTypeRaw ? sanitize(modelTypeRaw) : "未設定";
       const safeTiming = sanitize(measurementTiming);
 
-      // 出力ファイル名: バッテリー測定結果_会社名_測定区分_型式_日時.xlsx
       const fileName = `バッテリー測定結果_${safeCompany}_${safeTiming}_${safeModel}_${timestamp}.xlsx`;
 
       XLSX.writeFile(wb, fileName);
